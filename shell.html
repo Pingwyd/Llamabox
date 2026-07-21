@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', sans-serif; font-size: 12px; background: #1e1e1e; display: flex; flex-direction: column; }
+#toolbar {
+    flex: 0 0 auto; min-height: 36px;
+    background: #2d2d2d; color: #bbb;
+    display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
+    padding: 4px 10px;
+    user-select: none; z-index: 10;
+}
+#stats {
+    flex: 1; display: flex; align-items: center; flex-wrap: wrap;
+    gap: 6px; min-width: 0; overflow: hidden;
+}
+#stats .sep { color: #555; }
+#stats span { white-space: nowrap; }
+#stat-model { overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+#update-btn {
+    cursor: pointer; color: #a0a0a0; padding: 2px 10px;
+    border: 1px solid #444; border-radius: 4px; font-size: 11px;
+    flex-shrink: 0; margin-left: auto;
+    transition: all 0.15s ease;
+}
+#update-btn:hover { background: #3a3a3a; color: #d0d0d0; border-color: #666; }
+#update-btn.available { color: #4fc3f7; border-color: #4fc3f7; font-weight: 600; }
+#update-btn.available:hover { background: rgba(79,195,247,0.1); }
+#update-btn.checking { opacity: 0.6; pointer-events: none; }
+#server-frame { flex: 1; width: 100%; border: none; }
+</style>
+</head>
+<body>
+<div id="toolbar">
+    <div id="stats">
+        <span id="stat-cpu">CPU: --</span>
+        <span class="sep">|</span>
+        <span id="stat-ram">RAM: --</span>
+        <span class="sep" id="bat-sep" style="display:none">|</span>
+        <span id="stat-battery" style="display:none"></span>
+        <span class="sep">|</span>
+        <span id="stat-model">Model: --</span>
+    </div>
+    <div id="update-btn" onclick="checkUpdates()">Check for Updates</div>
+</div>
+<iframe id="server-frame"></iframe>
+<script>
+var batSep = document.getElementById('bat-sep');
+var batEl = document.getElementById('stat-battery');
+var updateBtn = document.getElementById('update-btn');
+
+async function initFrame() {
+    try {
+        var url = await window.pywebview.api.get_server_url();
+        document.getElementById('server-frame').src = url;
+    } catch (e) {
+        setTimeout(initFrame, 500);
+    }
+}
+
+async function refreshStats() {
+    try {
+        var stats = await window.pywebview.api.get_stats();
+        var cpuEl = document.getElementById('stat-cpu');
+        var ramEl = document.getElementById('stat-ram');
+        var modelEl = document.getElementById('stat-model');
+
+        if (stats.running) {
+            cpuEl.textContent = stats.cpu_measuring
+                ? 'CPU: measuring...'
+                : 'CPU: ' + (stats.cpu !== null ? stats.cpu.toFixed(1) + '%' : '--');
+            ramEl.textContent = 'RAM: ' + (stats.ram_mb !== null ? stats.ram_mb + ' MB' : '--');
+        } else {
+            cpuEl.textContent = 'CPU: --';
+            ramEl.textContent = 'RAM: --';
+        }
+
+        if (stats.battery_present) {
+            batEl.style.display = 'inline';
+            batSep.style.display = 'inline';
+            batEl.textContent = stats.battery_plugged_in
+                ? stats.battery_percent + '% (plugged in)'
+                : stats.battery_percent + '% (on battery)';
+        } else {
+            batEl.style.display = 'none';
+            batSep.style.display = 'none';
+        }
+
+        modelEl.textContent = 'Model: ' + (stats.model || '--');
+
+        // Sync button state from the backend's last update-check result.
+        var ustat = stats.update_status;
+        if (ustat === 'available') {
+            updateBtn.textContent = 'Update available';
+            updateBtn.className = 'available';
+        } else if (ustat === 'checking') {
+            updateBtn.textContent = 'Checking...';
+            updateBtn.className = 'checking';
+        } else {
+            updateBtn.textContent = 'Check for Updates';
+            updateBtn.className = '';
+        }
+    } catch (e) {
+        /* bridge not ready yet */
+    }
+}
+
+function checkUpdates() {
+    if (updateBtn.classList.contains('available')) {
+        // Update is available -- open the releases page in the browser.
+        window.pywebview.api.open_releases_page();
+    } else if (!updateBtn.classList.contains('checking')) {
+        // Trigger a fresh check.
+        window.pywebview.api.check_for_updates();
+    }
+}
+
+initFrame();
+setInterval(refreshStats, 3000);
+refreshStats();
+</script>
+</body>
+</html>
