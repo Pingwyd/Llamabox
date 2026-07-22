@@ -661,7 +661,7 @@ def load_config():
         sys.exit(1)
 
     try:
-        _parse_config(config)
+        config = _parse_config(config)
     except ValueError as exc:
         logging.error("%s: %s", CONFIG_FILENAME, exc)
         sys.exit(1)
