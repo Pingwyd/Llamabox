@@ -14,23 +14,144 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', sans-serif
     user-select: none; z-index: 10;
 }
 #stats {
-    flex: 1; display: flex; align-items: center; flex-wrap: wrap;
+    flex: 1; display: flex; align-items: center; justify-content: center;
     gap: 6px; min-width: 0; overflow: hidden;
 }
 #stats .sep { color: #555; }
 #stats span { white-space: nowrap; }
-#stat-model { overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
 #update-btn {
     cursor: pointer; color: #a0a0a0; padding: 2px 10px;
     border: 1px solid #444; border-radius: 4px; font-size: 11px;
-    flex-shrink: 0; margin-left: auto;
+    flex-shrink: 0;
     transition: all 0.15s ease;
 }
 #update-btn:hover { background: #3a3a3a; color: #d0d0d0; border-color: #666; }
 #update-btn.available { color: #4fc3f7; border-color: #4fc3f7; font-weight: 600; }
 #update-btn.available:hover { background: rgba(79,195,247,0.1); }
 #update-btn.checking { opacity: 0.6; pointer-events: none; }
+#settings-btn {
+    cursor: pointer; color: #a0a0a0; padding: 2px 8px;
+    border: 1px solid #444; border-radius: 4px; font-size: 14px;
+    flex-shrink: 0;
+    transition: all 0.15s ease;
+}
+#settings-btn:hover { background: #3a3a3a; color: #d0d0d0; border-color: #666; }
 #server-frame { flex: 1; width: 100%; border: none; }
+
+/* Settings Modal */
+#settings-overlay {
+    display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.55); z-index: 100;
+    align-items: center; justify-content: center;
+}
+#settings-overlay.visible { display: flex; }
+#settings-modal {
+    background: #252525; border: 1px solid #3a3a3a; border-radius: 10px;
+    width: 460px; max-height: 80vh; display: flex; flex-direction: column;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+}
+#settings-modal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px 0 20px;
+}
+#settings-modal-header h3 { color: #e0e0e0; font-size: 14px; font-weight: 600; }
+#settings-close {
+    cursor: pointer; color: #666; font-size: 20px; line-height: 1;
+    background: none; border: none; padding: 0 2px;
+}
+#settings-close:hover { color: #bbb; }
+
+/* Tabs */
+.settings-tabs {
+    display: flex; gap: 0; padding: 12px 20px 0 20px;
+    border-bottom: 1px solid #333;
+}
+.settings-tab {
+    padding: 8px 16px; font-size: 12px; color: #777; cursor: pointer;
+    border-bottom: 2px solid transparent; transition: all 0.15s ease;
+    background: none; border-top: none; border-left: none; border-right: none;
+}
+.settings-tab:hover { color: #bbb; }
+.settings-tab.active { color: #ddd; border-bottom-color: #4fc3f7; }
+
+/* Tab content */
+.settings-tab-content { display: none; padding: 20px; overflow-y: auto; flex: 1; }
+.settings-tab-content.active { display: block; }
+#settings-modal-body { display: flex; flex: 1; overflow: hidden; }
+
+.field-group { margin-bottom: 18px; }
+.field-group:last-child { margin-bottom: 0; }
+.field-label {
+    display: flex; align-items: center; gap: 6px;
+    color: #999; font-size: 11px; font-weight: 600; margin-bottom: 7px;
+    text-transform: uppercase; letter-spacing: 0.4px;
+}
+.field-label .restart-badge {
+    font-size: 9px; font-weight: 500; text-transform: none;
+    color: #2a6; background: rgba(34,170,102,0.12);
+    padding: 2px 6px; border-radius: 3px; letter-spacing: 0;
+}
+.field-input {
+    width: 100%; background: #1a1a1a; border: 1px solid #3a3a3a;
+    border-radius: 6px; color: #ddd; font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 12px; padding: 9px 12px; outline: none;
+    transition: border-color 0.15s ease;
+}
+.field-input:focus { border-color: #4fc3f7; }
+.field-input::placeholder { color: #555; }
+textarea.field-input {
+    height: 140px; line-height: 1.6; overflow-y: auto; resize: none;
+}
+
+/* Toggle row */
+.toggle-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 14px; background: #1a1a1a; border: 1px solid #3a3a3a;
+    border-radius: 6px;
+}
+.toggle-row-label { color: #ccc; font-size: 12px; }
+.toggle-row-sub { color: #666; font-size: 10px; margin-top: 2px; }
+
+/* Apple-style toggle */
+.toggle {
+    position: relative; width: 42px; height: 24px; flex-shrink: 0;
+}
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+    position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+    background: #444; border-radius: 12px; transition: background 0.2s ease;
+}
+.toggle-slider::before {
+    content: ''; position: absolute; height: 18px; width: 18px;
+    left: 3px; bottom: 3px; background: #eee; border-radius: 50%;
+    transition: transform 0.2s ease;
+}
+.toggle input:checked + .toggle-slider { background: #2a6; }
+.toggle input:checked + .toggle-slider::before { transform: translateX(18px); }
+
+#settings-modal-footer {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 20px; border-top: 1px solid #333;
+}
+#settings-notice { color: #f0ad4e; font-size: 11px; }
+#settings-modal-footer .btn-group { display: flex; gap: 8px; }
+.btn {
+    cursor: pointer; padding: 7px 18px; border-radius: 6px;
+    font-size: 12px; border: 1px solid #3a3a3a; color: #ccc;
+    background: #2a2a2a; transition: all 0.15s ease;
+}
+.btn:hover { background: #333; color: #ddd; border-color: #444; }
+.btn-primary { background: #2a6; border-color: #2a6; color: #fff; }
+.btn-primary:hover { background: #3b7; border-color: #3b7; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+.btn-primary:disabled { background: #2a6; border-color: #2a6; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+    display: inline-block; width: 12px; height: 12px;
+    border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff;
+    border-radius: 50%; animation: spin 0.6s linear infinite;
+    vertical-align: middle; margin-right: 6px;
+}
 </style>
 </head>
 <body>
@@ -41,16 +162,83 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', sans-serif
         <span id="stat-ram">RAM: --</span>
         <span class="sep" id="bat-sep" style="display:none">|</span>
         <span id="stat-battery" style="display:none"></span>
-        <span class="sep">|</span>
-        <span id="stat-model">Model: --</span>
     </div>
     <div id="update-btn" onclick="checkUpdates()">Check for Updates</div>
+    <div id="settings-btn" onclick="openSettings()">&#9881;</div>
 </div>
 <iframe id="server-frame"></iframe>
+
+<!-- Settings Modal -->
+<div id="settings-overlay" onclick="if(event.target===this)closeSettings()">
+    <div id="settings-modal">
+        <div id="settings-modal-header">
+            <h3>Settings</h3>
+            <button id="settings-close" onclick="closeSettings()">&times;</button>
+        </div>
+        <div class="settings-tabs">
+            <button class="settings-tab active" onclick="switchTab('general', this)">General</button>
+            <button class="settings-tab" onclick="switchTab('server', this)">Server</button>
+        </div>
+        <div id="settings-modal-body">
+            <div id="tab-general" class="settings-tab-content active">
+                <div class="field-group">
+                    <div class="toggle-row">
+                        <div>
+                            <div class="toggle-row-label">Start with Windows</div>
+                            <div class="toggle-row-sub">Launch Llamabox at login</div>
+                        </div>
+                        <label class="toggle">
+                            <input type="checkbox" id="cfg-startup" onchange="toggleStartup(this.checked)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div id="tab-server" class="settings-tab-content">
+                <div class="field-group">
+                    <div class="field-label">Server Path <span class="restart-badge">requires restart</span></div>
+                    <input id="cfg-path" class="field-input" type="text" placeholder="C:\...\llama-server.exe">
+                </div>
+                <div class="field-group">
+                    <div class="field-label">Server Arguments <span class="restart-badge">requires restart</span></div>
+                    <textarea id="cfg-args" class="field-input" placeholder='["-ngl", "999", "-c", "16384"]'></textarea>
+                </div>
+                <div class="field-group">
+                    <div class="field-label">Server URL <span class="restart-badge">requires restart</span></div>
+                    <input id="cfg-url" class="field-input" type="text" placeholder="http://127.0.0.1:8080">
+                </div>
+            </div>
+        </div>
+        <div id="settings-modal-footer">
+            <div style="display:flex;align-items:center;gap:8px;">
+                <button class="btn" id="restart-btn" onclick="restartServer()">Restart Server</button>
+                <span id="restart-notice" style="color:#f0ad4e;font-size:11px;"></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <span id="settings-notice"></span>
+                <div class="btn-group">
+                    <button class="btn" id="cancel-btn" onclick="closeSettings()">Cancel</button>
+                    <button class="btn btn-primary" id="save-btn" onclick="saveSettings()">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 var batSep = document.getElementById('bat-sep');
 var batEl = document.getElementById('stat-battery');
 var updateBtn = document.getElementById('update-btn');
+var settingsOverlay = document.getElementById('settings-overlay');
+var saveBtn = document.getElementById('save-btn');
+var cancelBtn = document.getElementById('cancel-btn');
+
+function switchTab(tab, el) {
+    document.querySelectorAll('.settings-tab').forEach(function(t) { t.classList.remove('active'); });
+    document.querySelectorAll('.settings-tab-content').forEach(function(c) { c.classList.remove('active'); });
+    el.classList.add('active');
+    document.getElementById('tab-' + tab).classList.add('active');
+}
 
 async function initFrame() {
     try {
@@ -66,7 +254,6 @@ async function refreshStats() {
         var stats = await window.pywebview.api.get_stats();
         var cpuEl = document.getElementById('stat-cpu');
         var ramEl = document.getElementById('stat-ram');
-        var modelEl = document.getElementById('stat-model');
 
         if (stats.running) {
             cpuEl.textContent = stats.cpu_measuring
@@ -89,9 +276,6 @@ async function refreshStats() {
             batSep.style.display = 'none';
         }
 
-        modelEl.textContent = 'Model: ' + (stats.model || '--');
-
-        // Sync button state from the backend's last update-check result.
         var ustat = stats.update_status;
         if (ustat === 'available') {
             updateBtn.textContent = 'Update available';
@@ -103,19 +287,184 @@ async function refreshStats() {
             updateBtn.textContent = 'Check for Updates';
             updateBtn.className = '';
         }
-    } catch (e) {
-        /* bridge not ready yet */
-    }
+    } catch (e) {}
 }
 
 function checkUpdates() {
     if (updateBtn.classList.contains('available')) {
-        // Update is available -- open the releases page in the browser.
         window.pywebview.api.open_releases_page();
     } else if (!updateBtn.classList.contains('checking')) {
-        // Trigger a fresh check.
         window.pywebview.api.check_for_updates();
     }
+}
+
+async function openSettings() {
+    var notice = document.getElementById('settings-notice');
+    notice.textContent = '';
+    resetSaveBtn();
+    switchTab('general', document.querySelector('.settings-tab'));
+    try {
+        var cfg = await window.pywebview.api.get_config();
+        if (cfg.error) { notice.textContent = cfg.error; }
+        document.getElementById('cfg-path').value = cfg.llama_server_path || '';
+        document.getElementById('cfg-args').value = JSON.stringify(cfg.llama_server_args || [], null, 2);
+        document.getElementById('cfg-url').value = cfg.server_url || '';
+    } catch (e) {
+        notice.textContent = 'Could not load config.';
+    }
+    try {
+        var startup = await window.pywebview.api.get_startup_enabled();
+        document.getElementById('cfg-startup').checked = !!startup;
+    } catch (e) {}
+    settingsOverlay.classList.add('visible');
+}
+
+function closeSettings() {
+    settingsOverlay.classList.remove('visible');
+    resetSaveBtn();
+}
+
+function resetSaveBtn() {
+    saveBtn.disabled = false;
+    saveBtn.innerHTML = 'Save';
+}
+
+async function toggleStartup(enabled) {
+    var notice = document.getElementById('settings-notice');
+    notice.textContent = '';
+    try {
+        var result = await window.pywebview.api.set_startup(enabled);
+        if (result.error) {
+            notice.textContent = 'Error: ' + result.error;
+            document.getElementById('cfg-startup').checked = !enabled;
+        }
+    } catch (e) {
+        notice.textContent = 'Could not update startup setting.';
+        document.getElementById('cfg-startup').checked = !enabled;
+    }
+}
+
+async function saveSettings() {
+    var notice = document.getElementById('settings-notice');
+    notice.textContent = '';
+
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="spinner"></span>Saving...';
+
+    var argsRaw = document.getElementById('cfg-args').value.trim();
+    var args;
+    try {
+        args = JSON.parse(argsRaw);
+        if (!Array.isArray(args)) throw new Error();
+        args = args.filter(function(a) { return typeof a === 'string' && a.length > 0; });
+    } catch (e) {
+        notice.textContent = 'Server Arguments must be a valid JSON array, e.g. ["-ngl", "999"]';
+        resetSaveBtn();
+        return;
+    }
+
+    var config = {
+        llama_server_path: document.getElementById('cfg-path').value.trim(),
+        llama_server_args: JSON.stringify(args),
+        server_url: document.getElementById('cfg-url').value.trim()
+    };
+    try {
+        var result = await window.pywebview.api.save_config(config);
+        if (result.error) {
+            notice.textContent = 'Error: ' + result.error;
+            resetSaveBtn();
+        } else if (result.restarted) {
+            notice.textContent = 'Saved. Server is restarting...';
+            saveBtn.innerHTML = '<span class="spinner"></span>Restarting...';
+            waitForRestart();
+        } else {
+            notice.textContent = 'Saved.';
+            resetSaveBtn();
+        }
+    } catch (e) {
+        notice.textContent = 'Could not save config.';
+        resetSaveBtn();
+    }
+}
+
+async function waitForRestart() {
+    var notice = document.getElementById('settings-notice');
+    var checks = 0;
+    var maxChecks = 15;
+    var interval = setInterval(async function() {
+        checks++;
+        try {
+            var stats = await window.pywebview.api.get_stats();
+            if (stats.running) {
+                clearInterval(interval);
+                notice.textContent = 'Saved. Server restarted.';
+                saveBtn.innerHTML = 'Done';
+                setTimeout(resetSaveBtn, 1500);
+                return;
+            }
+        } catch (e) {}
+        if (checks >= maxChecks) {
+            clearInterval(interval);
+            var errMsg = 'Server did not start in time.';
+            try {
+                var errResult = await window.pywebview.api.get_server_error();
+                if (errResult.error) {
+                    errMsg = errResult.error.split('\n')[0];
+                }
+            } catch (e) {}
+            notice.innerHTML = '<span style="color:#e55">Server failed:</span> ' + errMsg +
+                ' <button onclick="revertConfig()" style="color:#4fc3f7;background:none;border:none;cursor:pointer;text-decoration:underline;font-size:11px;padding:0;margin-left:4px;">Revert</button>';
+            resetSaveBtn();
+        }
+    }, 1000);
+}
+
+async function revertConfig() {
+    var notice = document.getElementById('settings-notice');
+    notice.textContent = 'Reverting...';
+    try {
+        var result = await window.pywebview.api.revert_config();
+        if (result.error) {
+            notice.textContent = 'Revert failed: ' + result.error;
+        } else {
+            notice.textContent = 'Reverted. Server is restarting...';
+            waitForRestart();
+        }
+    } catch (e) {
+        notice.textContent = 'Revert failed.';
+    }
+}
+
+async function restartServer() {
+    var btn = document.getElementById('restart-btn');
+    var notice = document.getElementById('restart-notice');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Restarting...';
+    notice.textContent = '';
+    try {
+        await window.pywebview.api.restart_server();
+    } catch (e) {}
+    var checks = 0;
+    var maxChecks = 15;
+    var interval = setInterval(async function() {
+        checks++;
+        try {
+            var stats = await window.pywebview.api.get_stats();
+            if (stats.running) {
+                clearInterval(interval);
+                notice.textContent = 'Server restarted.';
+                btn.innerHTML = 'Done';
+                setTimeout(function() { btn.disabled = false; btn.innerHTML = 'Restart Server'; }, 1500);
+                return;
+            }
+        } catch (e) {}
+        if (checks >= maxChecks) {
+            clearInterval(interval);
+            notice.textContent = 'Server did not start in time.';
+            btn.disabled = false;
+            btn.innerHTML = 'Restart Server';
+        }
+    }, 1000);
 }
 
 initFrame();

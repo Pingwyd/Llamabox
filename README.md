@@ -1,15 +1,51 @@
 # Llamabox Desktop Wrapper
 
-A minimal native Windows desktop wrapper for llama.cpp using pywebview.
+A minimal native desktop wrapper for llama.cpp using pywebview.
 Displays the llama-server web interface in a clean window with no browser
 chrome. Includes server process management, system tray with minimize-to-tray,
 and live CPU/RAM stats in the tray tooltip.
+
+Runs on both **Windows** and **Linux**.
+
+## Lightweight by Design
+
+Llamabox is built to stay out of your way. The entire wrapper adds just
+**45-90 MB of RAM** on top of whatever the llama-server process itself
+needs. There is no heavy Electron runtime, no bundled Chromium, and no
+background services -- just a single Python process, a tiny HTML toolbar,
+and the native WebView (Windows WebView2 or Linux WebKitGTK) that is
+already installed on your machine.
+
+For comparison, a typical Electron-based chat app uses 300-500 MB before
+you even load a model. Llamabox keeps the overhead low so more of your
+RAM stays available for the model weights where it actually matters.
 
 ## Prerequisites
 
 - Python 3.11+ installed and on PATH
 - `pip` (Python package installer)
 - llama.cpp installed somewhere on your machine
+
+### Linux-specific
+
+On Linux, you also need:
+
+- `zenity` or `notify-send` for native notification dialogs
+- `xdg-utils` for opening files in the default application (usually pre-installed)
+- A desktop environment with system tray support (GNOME, KDE, XFCE, etc.)
+- WebKitGTK (usually pre-installed on GNOME-based distros)
+
+Install on Debian/Ubuntu:
+
+```
+sudo apt install python3-pip zenity xdg-utils
+```
+
+Install on Fedora:
+
+```
+sudo dnf install python3-pip zenity xdg-utils
+```
 
 ## Setup
 
@@ -22,9 +58,11 @@ pip install -r requirements.txt
 ## Configuration (config.json)
 
 All server settings are stored in `config.json`, which is created
-automatically the first time you run the app.  It is placed in
-`%APPDATA%\Llamabox\` -- press Win+R and type `%APPDATA%\Llamabox` to
-find it quickly.
+automatically the first time you run the app.  The location depends on
+your OS:
+
+- **Windows**: `%APPDATA%\Llamabox\`
+- **Linux**: `~/.local/share/Llamabox/`
 
 Just run the app once:
 
@@ -39,36 +77,42 @@ editor.  It looks like this:
 {
   "llama_server_path": "C:\\llama.cpp\\llama-server.exe",
   "llama_server_args": [
-    "-hf", "unsloth/gemma-4-E2B-it-GGUF:UD-Q4_K_XL",
     "-ngl", "999",
     "-c", "16384",
     "--jinja",
-    "--tools", "write_file,read_file",
-    "--webui-mcp-proxy",
-    "--webui-config-file", "C:\\Program Files\\llama.cpp\\webui.json"
+    "--tools", "all"
   ],
   "server_url": "http://127.0.0.1:8080"
 }
 ```
 
+On Linux the default server path is `~/llama.cpp/llama-server` (without
+the `.exe` suffix).
+
 | Field | What to put |
 |-------|-------------|
-| `llama_server_path` | Full path to your `llama-server.exe` |
-| `llama_server_args` | Command-line arguments (model file, flags, etc.) |
+| `llama_server_path` | Full path to your `llama-server` executable |
+| `llama_server_args` | Command-line arguments as a JSON array (model file, flags, etc.) |
 | `server_url` | The URL the server will serve on (usually unchanged) |
 
 Save the file and run the app again.  You only need to edit this file
 when you change your model or server settings -- the script itself never
 needs editing.
 
-Once the app is running, you can also open `config.json` from the tray
-menu: right-click the tray icon and choose **Edit Config**.
+You can also edit config from within the app: click the gear icon in the
+toolbar to open the **Settings** modal, or right-click the tray icon and
+choose **Edit Config**.
 
 ## Logging (app.log)
 
-All application status messages and errors are written to `app.log`, which
-is created in `%APPDATA%\Llamabox\`.  The log file is capped at 5 MB with
-one backup (app.log.1) so it does not grow forever.
+All application status messages and errors are written to `app.log`,
+which is created in the same data directory as `config.json`:
+
+- **Windows**: `%APPDATA%\Llamabox\`
+- **Linux**: `~/.local/share/Llamabox/`
+
+The log file is capped at 5 MB with one backup (app.log.1) so it does
+not grow forever.
 
 Each log line includes a timestamp and severity level:
 
@@ -78,26 +122,28 @@ Each log line includes a timestamp and severity level:
 2026-07-21 15:10:42 [ERROR] Server did not start within 60 seconds
 ```
 
-If the app crashes, a native Windows message box will appear telling you
+If the app crashes, a native message box will appear telling you
 something went wrong and where to find `app.log` for the full traceback.
-This is critical for the packaged `.exe` version, where there is no
-visible terminal to show errors.
+On Windows this is a standard Win32 MessageBox; on Linux it uses zenity
+(or notify-send as a fallback).
 
 You can open the log file directly from the tray menu: right-click the
 tray icon and choose **View Logs**.
 
 ### Where to find the files
 
-| File | Location | Purpose |
-|------|----------|---------|
-| `config.json` | `%APPDATA%\Llamabox\` | Server settings (path, model, args) |
-| `app.log` | `%APPDATA%\Llamabox\` | Application log (startup, errors, shutdown) |
-| `server.log` | `%APPDATA%\Llamabox\` | llama-server stdout/stderr output |
+| File | Windows | Linux | Purpose |
+|------|---------|-------|---------|
+| `config.json` | `%APPDATA%\Llamabox\` | `~/.local/share/Llamabox/` | Server settings (path, model, args) |
+| `app.log` | `%APPDATA%\Llamabox\` | `~/.local/share/Llamabox/` | Application log (startup, errors, shutdown) |
+| `server.log` | `%APPDATA%\Llamabox\` | `~/.local/share/Llamabox/` | llama-server stdout/stderr output |
 
-To open `%APPDATA%\Llamabox\` quickly, press Win+R, type `%APPDATA%\Llamabox`,
-and press Enter.
+To open the data directory quickly:
 
-### For the packaged .exe version
+- **Windows**: Press Win+R, type `%APPDATA%\Llamabox`, and press Enter.
+- **Linux**: Run `xdg-open ~/.local/share/Llamabox` in a terminal.
+
+### For the packaged .exe version (Windows)
 
 When running the packaged `.exe` (no console window), there is no terminal
 output visible.  If something goes wrong:
@@ -116,36 +162,90 @@ python wrapper.py
 ```
 
 The script will:
-1.  Configure logging to `app.log` in `%APPDATA%\Llamabox\`.
-2.  Load settings from `config.json` (create it first if missing).
-3.  Kill any leftover `llama-server.exe` from previous runs.
-4.  Launch a fresh `llama-server.exe` with your configured arguments.
- 5.  Poll `http://127.0.0.1:8080` every 2 seconds until the server responds
-     (60 second timeout).
- 6.  Show the pywebview window pointed at the local `shell.html` file,
-     which contains a thin toolbar at the top and an iframe embedding the
-     actual server UI.  The toolbar shows live CPU, RAM, battery status,
-     and the active model name.
- 7.  Add a system tray icon.  Closing the window hides it to the tray;
-     use "Show Window" / "Edit Config" / "View Logs" / "Restart Server" /
-     "Quit" from the tray menu.
- 8.  Chat history and UI customizations you make in the web UI (model
-     selection, dark mode, etc.) are saved in a persistent WebView2
-     profile folder at `%APPDATA%\Llamabox\WebView2Data\` (see below).
- 9.  If running on battery below 30% charge, a one-time native message
-     box suggests using a lighter model profile (configurable via the
-     `BATTERY_WARNING_THRESHOLD` constant in `wrapper.py`).
 
-## WebView2 Profile (Chat History & UI Settings)
+1.  Configure logging to `app.log` in the data directory.
+2.  Load settings from `config.json` (create it first if missing).
+3.  Kill any leftover `llama-server` process from previous runs.
+4.  Launch a fresh `llama-server` with your configured arguments.
+5.  Poll the server URL every 2 seconds until the server responds
+    (60 second timeout).  If the server exits immediately (bad args,
+    missing file), the error is captured and displayed in the settings
+    modal with an option to revert.
+6.  Show the pywebview window pointed at the local `shell.html` file,
+    which contains a thin toolbar at the top and an iframe embedding the
+    actual server UI.  The toolbar shows live CPU, RAM, and battery status
+    (if a battery is detected).
+7.  Add a system tray icon.  Closing the window hides it to the tray;
+    use "Show Window" / "Edit Config" / "View Logs" / "Restart Server" /
+    "Quit" from the tray menu.
+8.  Chat history and UI customizations you make in the web UI (model
+    selection, dark mode, etc.) are saved in a persistent browser profile
+    folder at `WebView2Data` (Windows) or the WebKitGTK data directory
+    (Linux), both inside the data directory.
+9.  If running on battery below 30% charge, a one-time native message
+    box suggests using a lighter model profile (configurable via the
+    `BATTERY_WARNING_THRESHOLD` constant in `wrapper.py`).
+
+## Settings Modal
+
+Click the gear icon (&#9881;) in the toolbar to open the Settings modal.
+It has two tabs:
+
+### General
+
+- **Start with Windows** (also works on Linux) -- Apple-style toggle
+  that enables automatic launch at login.  See the
+  [Start with Windows / Linux](#start-with-windows--linux) section for
+  details.
+
+### Server
+
+- **Server Path** -- Full path to the `llama-server` executable.
+  Shows a "requires restart" badge.
+- **Server Arguments** -- JSON array of command-line arguments for the
+  server.  Must be a valid JSON array, e.g. `["-ngl", "999", "-c", "16384"]`.
+  Shows a "requires restart" badge.
+- **Server URL** -- The URL the server is expected to serve on.
+  Shows a "requires restart" badge.
+
+### Saving and Restarting
+
+When you click **Save**:
+
+1. The button shows a spinner with "Saving..." text.
+2. If any server fields changed, the server is automatically restarted.
+3. The button shows "Restarting..." while polling for the server to come
+   back up.
+4. On success, the button shows "Done" briefly before resetting.
+
+### Error Recovery
+
+If the server fails to start after saving (e.g. bad arguments, missing
+executable), the error message is displayed in the modal footer along
+with a **Revert** link.  Clicking Revert restores the previous
+`config.json` values and restarts the server, so you are never stuck
+with broken settings.
+
+### Restart Server Button
+
+The **Restart Server** button in the modal footer manually restarts the
+llama-server process without changing any settings.  Useful after
+updating models or changing server-side configuration.
+
+## WebView2 / WebKit Profile (Chat History & UI Settings)
 
 The llama-server web UI stores its settings and chat history in the
-browser's localStorage API.  A plain WebView2/Edge window would normally
-use a temporary profile folder, meaning everything would be lost every
-time the window was recreated or the app restarted.
+browser's localStorage API.  A plain pywebview window would normally use
+a temporary profile folder, meaning everything would be lost every time
+the window was recreated or the app restarted.
 
-This wrapper configures the underlying WebView2 engine to use a fixed,
-persistent profile folder at `%APPDATA%\Llamabox\WebView2Data\`.  This
-folder contains all the data the web UI persists locally:
+This wrapper configures the underlying browser engine to use a fixed,
+persistent profile folder inside the data directory:
+
+- **Windows**: `%APPDATA%\Llamabox\WebView2Data\` (WebView2 / Edge)
+- **Linux**: `~/.local/share/Llamabox/WebKitData/` (WebKitGTK)
+
+This folder contains all the data the web UI persists locally:
 
 | Data | What it holds |
 |------|---------------|
@@ -156,12 +256,12 @@ folder contains all the data the web UI persists locally:
 **This is separate from `config.json`.**  `config.json` only controls how
 the server is launched (executable path, model file, command-line flags).
 Everything you change inside the web UI (chat history, themes, etc.) lives
-in the WebView2 profile folder instead.
+in the browser profile folder instead.
 
 If you ever want to reset the web UI to factory defaults (e.g. clear chat
-history, reset preferences), simply **delete the `WebView2Data` folder**
-while the app is not running.  The folder will be recreated automatically
-the next time you launch the app.
+history, reset preferences), simply **delete the profile folder** while
+the app is not running.  The folder will be recreated automatically the
+next time you launch the app.
 
 ## Battery Awareness
 
@@ -183,6 +283,31 @@ warning entirely.
 
 This is an informational feature only -- no automatic model-switching
 or CPU-only mode is implemented based on battery state.
+
+## Error Handling
+
+### Server Crash Detection
+
+If the llama-server process crashes while running (e.g. out of memory,
+segfault), the tray icon tooltip updates to show "Server not running" and
+a native notification is shown.  The app keeps running so you can restart
+the server from the tray menu or settings modal.
+
+### Fast-Failure Detection
+
+When starting the server, if the process exits within the first few
+seconds (e.g. bad arguments, missing executable), the error is captured
+immediately rather than waiting for the full 60-second timeout.  The
+error includes the server's exit code and the last few lines from
+`server.log`.
+
+### Config Revert
+
+When you save new server settings in the settings modal, the previous
+config is stored in memory.  If the server fails to start with the new
+settings, a **Revert** link appears in the error message.  Clicking it
+restores the previous `config.json` and restarts the server, so you can
+always get back to a working state.
 
 ## Update Checking
 
@@ -218,46 +343,42 @@ Instead of pointing pywebview directly at the llama-server web UI, the
 app loads a local `shell.html` file (bundled alongside `wrapper.py`).
 This file contains:
 
-- A thin toolbar (~38 px) at the top with live stats: CPU, RAM, battery
-  status (if a battery is detected), and the active model name.  These
-  are updated every 3 seconds via the pywebview JavaScript bridge
-  (`window.pywebview.api`).
+- A thin toolbar (~38 px) at the top with live stats: CPU, RAM, and
+  battery status (if a battery is detected).  These are updated every
+  3 seconds via the pywebview JavaScript bridge (`window.pywebview.api`).
 - A **Check for Updates** button on the right side that queries the GitHub
   releases API.  It changes appearance when an update is available and
   opens the releases page in your browser.
+- A **Settings** gear icon (&#9881;) that opens the settings modal for
+  managing server config and startup options.
 - An iframe below the toolbar that fills the remaining window height and
   embeds the actual llama-server web UI.
-
-The toolbar replaces the battery status that was previously shown in the
-tray icon tooltip (which now only shows CPU and RAM, keeping the tray
-area clean since Windows already shows battery status natively).
 
 This approach avoids fragile frameless-window hacks and avoids injecting
 code into llama.cpp's own pages, which could break across updates.
 
-## Start with Windows
+## Start with Windows / Linux
 
-You can tell Llamabox to launch automatically when you log into Windows
-by checking **Start with Windows** in the tray menu.  Uncheck it to
-disable auto-start.
+You can tell Llamabox to launch automatically when you log in.
 
-This uses the standard per-user registry key at:
+- **Windows**: Check **Start with Windows** in the settings modal or tray
+  menu.  This uses the standard per-user registry key at:
+  ```
+  HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run
+  ```
+  with a value named `Llamabox`.  No admin rights are required since it
+  is per-user.
 
-```
-HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run
-```
-
-with a value named `Llamabox` containing the full path to the executable
-(or the Python interpreter + script path when running in development
-mode).  This is the same mechanism used by countless Windows applications
--- no admin rights are required since it is per-user, and you can verify
-or remove it manually at any time with `regedit.exe` by navigating to the
-key above.
+- **Linux**: Check **Start with Windows** in the settings modal or tray
+  menu (the label stays the same for consistency).  This creates a
+  `.desktop` file at `~/.config/autostart/llamabox.desktop` which GNOME,
+  KDE, XFCE, and other freedesktop-compatible desktop environments
+  recognize automatically.
 
 If the toggle action fails (e.g. permissions issue), a native error
 message will appear and the failure is logged to `app.log`.
 
-## Building a Standalone .exe
+## Building a Standalone .exe (Windows)
 
 Install PyInstaller:
 
@@ -289,26 +410,50 @@ The resulting `.exe` will be at `dist\Llamabox.exe`.
 | `--hidden-import` | Force PyInstaller to include modules it might miss during scanning. |
 | `--collect-all PIL` | Bundle all Pillow image format plugins (needed for the tray icon). |
 
+## Building on Linux
+
+To create a distributable package on Linux, you can use PyInstaller
+with similar flags (adjust hidden imports for Linux backends):
+
+```
+pyinstaller --onefile --windowed --name "llamabox" ^
+  --hidden-import webview.platforms.gtk ^
+  --hidden-import pystray._appindicator ^
+  --collect-all PIL ^
+  wrapper.py
+```
+
+The resulting binary will be at `dist/llamabox`.
+
+On Linux you may also package the app as a `.deb`, `.rpm`, or AppImage
+using standard Linux packaging tools.  Make sure to include `zenity` and
+`xdg-utils` as dependencies.
+
 ## PyInstaller Notes
 
 - **Hidden imports**: pywebview's platform backends (`win32_edge`,
-  `winforms`) and `pystray._win32` are dynamically loaded at runtime,
-  so PyInstaller's scanner won't find them automatically.  They must be
-  listed with `--hidden-import` or the packaged .exe will crash on launch.
+  `winforms` on Windows; `gtk` on Linux) and `pystray` backends
+  (`_win32` on Windows; `_appindicator` on Linux) are dynamically loaded
+  at runtime, so PyInstaller's scanner won't find them automatically.
+  They must be listed with `--hidden-import` or the packaged binary will
+  crash on launch.
 - **Pillow plugins**: `--collect-all PIL` ensures all image format handlers
   are bundled -- without this, the tray icon generation may fail.
-- **config.json**, **app.log**, and **server.log** are written in
-  `%APPDATA%\Llamabox\`, not next to the .exe.  This is because the .exe
-  may be installed in a write-protected location (e.g. Program Files),
-  so a user-writable directory is used instead.  The directory is created
-  automatically the first time the app runs.
+- **config.json**, **app.log**, and **server.log** are written in the
+  platform-specific data directory (`%APPDATA%\Llamabox\` on Windows,
+  `~/.local/share/Llamabox/` on Linux), not next to the executable.
+  This is because the executable may be installed in a write-protected
+  location (e.g. Program Files), so a user-writable directory is used
+  instead.  The directory is created automatically the first time the
+  app runs.
 - **Migration from older versions**: If you had files from a previous
   version stored next to the script/exe, or from the old `%APPDATA%\LocalAI\`
-  directory (before the rename), they are automatically copied to
-  `%APPDATA%\Llamabox\` on first launch.  The old copies are left in place
+  directory (before the rename), they are automatically copied to the
+  new data directory on first launch.  The old copies are left in place
   and can be removed once you have confirmed the new location works.
-- **After packaging**, configuration works the same way: run the .exe
-  once, it creates `config.json` in `%APPDATA%\Llamabox\`, edit that file,
-  and restart.  No need to rebuild the .exe when you change models or paths.
-- **Finding files manually**: Press Win+R, type `%APPDATA%\Llamabox`, and
-  press Enter to open the folder in File Explorer.
+- **After packaging**, configuration works the same way: run the binary
+  once, it creates `config.json` in the data directory, edit that file,
+  and restart.  No need to rebuild when you change models or paths.
+- **Finding files manually**:
+  - Windows: Press Win+R, type `%APPDATA%\Llamabox`, and press Enter.
+  - Linux: Run `xdg-open ~/.local/share/Llamabox` in a terminal.
