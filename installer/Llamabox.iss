@@ -162,236 +162,39 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
 
 [Code]
 // ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-type
-  // PROCESSENTRY32 structure for CreateToolhelp32Snapshot API.
-  // Must be defined manually because Inno Setup 6.7.1 doesn't ship
-  // TProcessEntry32 or TProcessEntry32 as built-in types.
-  TProcessEntry32 = record
-    dwSize: LongWord;
-    cntUsage: LongWord;
-    th32ProcessID: LongWord;
-    th32DefaultHeapID: LongWord;
-    th32ModuleID: LongWord;
-    cntThreads: LongWord;
-    th32ParentProcessID: LongWord;
-    pcPriClassBase: LongInt;
-    dwFlags: LongWord;
-    szExeFile: array[0..259] of Char;
-  end;
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-const
-  // The process name to look for (without .exe extension).
-  // If the user has Llamabox running, we need to close it before installing.
-  ProcessName = 'Llamabox';
-
-// ---------------------------------------------------------------------------
-// Win32 API imports — needed for process detection / termination.
-// These are not built into Inno Setup's Pascal Script so we declare them
-// explicitly from kernel32.dll.
-// ---------------------------------------------------------------------------
-function CreateToolhelp32Snapshot(dwFlags: LongWord; th32ProcessID: LongWord): THandle;
-external 'CreateToolhelp32Snapshot@kernel32.dll stdcall';
-function Process32First(hSnapshot: THandle; var lppe: TProcessEntry32): Boolean;
-external 'Process32First@kernel32.dll stdcall';
-function Process32Next(hSnapshot: THandle; var lppe: TProcessEntry32): Boolean;
-external 'Process32Next@kernel32.dll stdcall';
-function OpenProcess(dwDesiredAccess: LongWord; bInheritHandle: Boolean; dwProcessId: LongWord): THandle;
-external 'OpenProcess@kernel32.dll stdcall';
-function TerminateProcess(hProcess: THandle; uExitCode: LongWord): Boolean;
-external 'TerminateProcess@kernel32.dll stdcall';
-function CloseHandle(hObject: THandle): Boolean;
-external 'CloseHandle@kernel32.dll stdcall';
-
-// ---------------------------------------------------------------------------
-// CheckIfRunning: Detect if Llamabox is currently running.
-// Returns True if the process is found, False otherwise.
-// Uses the Windows CreateToolhelp32Snapshot API to enumerate processes.
-// ---------------------------------------------------------------------------
-function CheckIfRunning(): Boolean;
-var
-  hSnapshot: THandle;
-  pe: TProcessEntry32;
-  Found: Boolean;
-begin
-  Result := False;
-
-  // Take a snapshot of all running processes
-  hSnapshot := CreateToolhelp32Snapshot($00000002  { TH32CS_SNAPPROCESS }, 0);
-  if hSnapshot = LongWord(-1)  { INVALID_HANDLE_VALUE } then
-    Exit;
-
-  // Initialize the structure size
-  pe.dwSize := SizeOf(pe);
-
-  // Walk the process list
-  Found := Process32First(hSnapshot, pe);
-  while Found do
-  begin
-    // Compare process names (case-insensitive)
-    if CompareText(ChangeFileExt(pe.szExeFile, ''), ProcessName) = 0 then
-    begin
-      Result := True;
-      Break;
-    end;
-    Found := Process32Next(hSnapshot, pe);
-  end;
-
-  CloseHandle(hSnapshot);
-end;
-
-// ---------------------------------------------------------------------------
-// KillProcess: Terminate a running process by name.
-// Uses TerminateProcess after finding the PID via CreateToolhelp32Snapshot.
-// Returns True if the process was found and terminated.
-// ---------------------------------------------------------------------------
-function KillProcess(const AName: string): Boolean;
-var
-  hSnapshot: THandle;
-  pe: TProcessEntry32;
-  hProcess: THandle;
-  Found: Boolean;
-begin
-  Result := False;
-
-  hSnapshot := CreateToolhelp32Snapshot($00000002  { TH32CS_SNAPPROCESS }, 0);
-  if hSnapshot = LongWord(-1)  { INVALID_HANDLE_VALUE } then
-    Exit;
-
-  pe.dwSize := SizeOf(pe);
-  Found := Process32First(hSnapshot, pe);
-
-  while Found do
-  begin
-    if CompareText(ChangeFileExt(pe.szExeFile, ''), AName) = 0 then
-    begin
-      // Open the process with terminate rights
-      hProcess := OpenProcess($00000001  { PROCESS_TERMINATE }, False, pe.th32ProcessID);
-      if hProcess <> 0 then
-      begin
-        TerminateProcess(hProcess, 0);
-        CloseHandle(hProcess);
-        Result := True;
-      end;
-    end;
-    Found := Process32Next(hSnapshot, pe);
-  end;
-
-  CloseHandle(hSnapshot);
-end;
-
-// ---------------------------------------------------------------------------
 // InitializeSetup: Called once when the installer first launches.
-// Checks if Llamabox is running and offers to close it.
+// Uses taskkill (built into Windows) to close any running Llamabox instance.
 // Return False to abort installation, True to continue.
 // ---------------------------------------------------------------------------
 function InitializeSetup(): Boolean;
+var
+  ResultCode: Integer;
 begin
   Result := True;
 
-  if CheckIfRunning() then
+  // taskkill returns 0 if the process was found and terminated.
+  // It returns 128 if no matching process was found (not running).
+  // We only show a prompt if the process is actually running.
+  if Exec('taskkill', '/f /im Llamabox.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
   begin
-    // Ask the user if we should close the running instance
-    if MsgBox(
-      'LlamaBox is currently running.'#13#10#13#10 +
-      'The installer needs to close it before proceeding.'#13#10 +
-      'Any unsaved changes in the server will be lost.'#13#10#13#10 +
-      'Close LlamaBox now?',
-      mbConfirmation,
-      MB_YESNO
-    ) = IDYES then
+    if ResultCode = 0 then
     begin
-      // Give the process a moment to shut down gracefully
-      // (the app handles WM_CLOSE / tray quit cleanly)
-      KillProcess(ProcessName);
-
-      // Wait up to 5 seconds for the process to exit
-      Sleep(5000);
-
-      // If it's still running, warn the user
-      if CheckIfRunning() then
-      begin
-        if MsgBox(
-          'LlamaBox is still running. Force close it?',
-          mbConfirmation,
-          MB_YESNO
-        ) = IDYES then
-        begin
-          KillProcess(ProcessName);
-          Sleep(2000);
-        end
-        else
-        begin
-          // User declined — abort the installation
-          MsgBox(
-            'Installation cancelled. Please close LlamaBox manually and try again.',
-            mbError,
-            MB_OK
-          );
-          Result := False;
-        end;
-      end;
-    end
-    else
-    begin
-      // User chose not to close — abort
-      MsgBox(
-        'Installation cancelled. Please close LlamaBox manually and try again.',
-        mbError,
-        MB_OK
-      );
-      Result := False;
+      // Process was running and was killed — give it a moment
+      Sleep(500);
     end;
-  end;
-end;
-
-// ---------------------------------------------------------------------------
-// CurStepChanged: Called after each step of the installation finishes.
-// We use PostInstall (step = ssPostInstall) to offer launching the app.
-// ---------------------------------------------------------------------------
-procedure CurStepChanged(CurStep: TSetupStep);
-begin
-  // ssPostInstall = 3, meaning the installation just finished
-  if CurStep = ssPostInstall then
-  begin
-    // The finish page checkbox "Launch LlamaBox" is handled automatically
-    // by Inno Setup via the [Run] section below. No extra code needed here.
   end;
 end;
 
 // ---------------------------------------------------------------------------
 // InitializeUninstall: Called before uninstallation begins.
-// Closes Llamabox if it's running, so files can be removed cleanly.
+// Does the same taskkill to ensure files can be removed cleanly.
 // ---------------------------------------------------------------------------
 function InitializeUninstall(): Boolean;
+var
+  ResultCode: Integer;
 begin
   Result := True;
-
-  if CheckIfRunning() then
-  begin
-    if MsgBox(
-      'LlamaBox is currently running. Close it now?',
-      mbConfirmation,
-      MB_YESNO
-    ) = IDYES then
-    begin
-      KillProcess(ProcessName);
-      Sleep(3000);
-    end;
-  end;
-end;
-
-// ---------------------------------------------------------------------------
-// UninstallNeedRestart: Tells Inno Setup whether a restart is needed.
-// We don't need one — just returning False.
-// ---------------------------------------------------------------------------
-function UninstallNeedRestart(): Boolean;
-begin
-  Result := False;
+  Exec('taskkill', '/f /im Llamabox.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
 ; -----------------------------------------------------------------------------
