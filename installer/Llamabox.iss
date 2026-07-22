@@ -162,6 +162,26 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
 
 [Code]
 // ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+type
+  // PROCESSENTRY32 structure for CreateToolhelp32Snapshot API.
+  // Must be defined manually because Inno Setup 6.7.1 doesn't ship
+  // TProcessEntry32 or TProcessEntry32 as built-in types.
+  TProcessEntry32 = record
+    dwSize: LongWord;
+    cntUsage: LongWord;
+    th32ProcessID: LongWord;
+    th32DefaultHeapID: LongWord;
+    th32ModuleID: LongWord;
+    cntThreads: LongWord;
+    th32ParentProcessID: LongWord;
+    pcPriClassBase: LongInt;
+    dwFlags: LongWord;
+    szExeFile: array[0..259] of Char;
+  end;
+
+// ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 const
@@ -177,7 +197,7 @@ const
 function CheckIfRunning(): Boolean;
 var
   hSnapshot: THandle;
-  pe: TWindowsProcessEntry32;
+  pe: TProcessEntry32;
   Found: Boolean;
 begin
   Result := False;
@@ -214,7 +234,7 @@ end;
 function KillProcess(const AName: string): Boolean;
 var
   hSnapshot: THandle;
-  pe: TWindowsProcessEntry32;
+  pe: TProcessEntry32;
   hProcess: THandle;
   Found: Boolean;
 begin
