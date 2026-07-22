@@ -1,0 +1,147 @@
+# =============================================================================
+# LlamaBox Release Workflow — GitHub Actions
+# =============================================================================
+#
+# Triggered by pushing a version tag like v1.0.1 (not on every push to main).
+# Builds the portable .exe + Inno Setup installer and publishes both to a
+# GitHub Release.
+#
+# Before tagging, make sure:
+#   1. CURRENT_VERSION in wrapper.py matches the tag (e.g. "1.0.1" for tag
+#      "v1.0.1").  The workflow checks this and fails if they don't match.
+#   2. All changes are committed on main (or whichever branch the tag points
+#      to).
+#   3. The installer .iss file has the AppVersion updated to match.
+#
+# Steps:
+#   tag pushed → run tests → build .exe → build installer → publish release
+# =============================================================================
+
+name: Release
+
+# ---------------------------------------------------------------------------
+# TRIGGER: push a tag matching v*.*.*  (e.g. v1.0.0, v1.2.3, v2.0.0)
+# ---------------------------------------------------------------------------
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+# ---------------------------------------------------------------------------
+# PERMISSIONS: needed to create a GitHub Release and upload assets
+# ---------------------------------------------------------------------------
+permissions:
+  contents: write
+
+# ---------------------------------------------------------------------------
+# JOBS
+# ---------------------------------------------------------------------------
+jobs:
+  release:
+    # Windows is the only tested platform (see README Platform Support)
+    runs-on: windows-latest
+
+    # -----------------------------------------------------------------------
+    # STEPS
+    # -----------------------------------------------------------------------
+    steps:
+      # 1. Check out the repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Fetch all tags and history so generate_release_notes can build a
+          # changelog from commits since the last tag.
+          fetch-depth: 0
+
+      # 2. Set up Python 3.11
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      # 3. Install runtime + test dependencies
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-dev.txt
+
+      # 4. Extract the version number from the git tag (strip the leading "v")
+      #    e.g. tag "v1.0.1" → version "1.0.1"
+      #    This is used to name the release assets and to validate the tag
+      #    against the app's CURRENT_VERSION constant.
+      - name: Extract version from tag
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = $tag -replace "^v", ""
+          echo "VERSION=$version" >> $env:GITHUB_ENV
+
+      # 5. Validate that the tag version matches CURRENT_VERSION in wrapper.py.
+      #    This catches the common mistake of bumping the tag but forgetting
+      #    to update the constant inside the app.  If they don't match, the
+      #    workflow stops here and the release is NOT published.
+      - name: Validate CURRENT_VERSION matches tag
+        shell: pwsh
+        run: |
+          $expected = "${{ env.VERSION }}"
+          $current = python -c "import re; m=re.search(r'^CURRENT_VERSION\s*=\s*[\"']([^\"']+)[\"']', open('wrapper.py').read(), re.M); print(m.group(1))"
+          if ($current -ne $expected) {
+            Write-Host "::error::CURRENT_VERSION in wrapper.py is '$current' but tag version is '$expected'."
+            Write-Host "::error::Update CURRENT_VERSION to '$expected' in wrapper.py, commit, and re-tag."
+            exit 1
+          }
+          Write-Host "CURRENT_VERSION ($current) matches tag ($expected) — OK"
+
+      # 6. Run the smoke test suite.  If tests fail, we stop here — a broken
+      #    release should never be published.
+      - name: Run smoke tests
+        run: python -m pytest -v
+
+      # 7. Install PyInstaller and build the portable .exe.
+      #    The --icon and --hidden-import flags match the original packaging
+      #    instructions from the project's README.
+      - name: Build portable .exe with PyInstaller
+        run: |
+          pip install pyinstaller
+          pyinstaller --onefile --windowed --icon=llamabox.ico --name "Llamabox" ^
+            --hidden-import webview.platforms.win32_edge ^
+            --hidden-import webview.platforms.winforms ^
+            --hidden-import pystray._win32 ^
+            --collect-all PIL ^
+            wrapper.py
+        shell: pwsh
+
+      # 8. Install Inno Setup via Chocolatey and compile the installer .iss
+      #    into the final Setup.exe.  Chocolatey is pre-installed on GitHub
+      #    Actions Windows runners.
+      - name: Install Inno Setup and build installer
+        run: |
+          choco install innosetup --no-progress --confirm
+          # ISCC.exe is added to PATH by the Chocolatey package
+          ISCC.exe installer\Llamabox.iss
+        shell: pwsh
+
+      # 9. Copy and rename the built artifacts with versioned filenames.
+      #    We stage them in a single directory so the release step can
+      #    upload everything with a glob pattern.
+      - name: Stage release assets
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path release-assets -Force
+          Copy-Item dist\Llamabox.exe "release-assets\LlamaBox-${{ env.VERSION }}-portable.exe"
+          Copy-Item installer\Output\LlamaboxSetup.exe "release-assets\LlamaBox-${{ env.VERSION }}-Setup.exe"
+
+      # 10. Create a GitHub Release and attach the assets.
+      #     The generate_release_notes: true flag auto-creates a changelog
+      #     from commits since the last tag (requires fetch-depth: 0 above).
+      #     The tag_name is the original git tag (e.g. "v1.0.1").
+      #     The name is also the tag name.
+      #     The body will contain the auto-generated release notes.
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: release-assets/*
+          fail_on_unmatched_files: true

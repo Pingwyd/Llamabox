@@ -1,0 +1,82 @@
+# =============================================================================
+# LlamaBox CI — GitHub Actions Workflow
+# =============================================================================
+#
+# This workflow runs on every push to main and every pull request targeting
+# main.  It checks that:
+#   1. The Python code passes ruff linting (no syntax errors or bugs)
+#   2. The pytest smoke-test suite passes
+#
+# If either step fails, the workflow fails and blocks the PR from merging
+# (assuming you have branch protection rules enabled on the repo).
+#
+# Reference: https://docs.github.com/en/actions/using-workflows
+# =============================================================================
+
+name: CI
+
+# ---------------------------------------------------------------------------
+# TRIGGERS
+# ---------------------------------------------------------------------------
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# ---------------------------------------------------------------------------
+# JOBS
+#
+# We only need one job for now: run lint + tests on Windows.
+# ---------------------------------------------------------------------------
+jobs:
+  ci:
+    # The runner OS — windows-latest matches our Windows-focused platform
+    # (see README.md's Platform Support section).
+    runs-on: windows-latest
+
+    # -----------------------------------------------------------------------
+    # STEPS
+    # -----------------------------------------------------------------------
+    steps:
+      # 1. Check out the repository contents so subsequent steps can access
+      #    the source files.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Set up Python.  We pin a specific version so the CI environment
+      #    matches what we develop with locally.  The "cache" option tells
+      #    the action to cache pip downloads across runs, which speeds up
+      #    repeated builds.
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      # 3. Install both runtime and test dependencies.  The "-r" flag tells
+      #    pip to install from the given requirements file.  requirements-dev.txt
+      #    includes everything in requirements.txt plus pytest.
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-dev.txt
+          pip install ruff
+
+      # 4. Run ruff as a linter.  Ruff is a fast Python linter written in
+      #    Rust.  We run it in "check" mode, which reports errors and
+      #    warnings without auto-fixing anything.  The configuration lives
+      #    in ruff.toml (see project root).
+      #
+      #    The "--output-format=github" flag formats errors so they show up
+      #    as annotated annotations on the PR's "Files changed" tab.
+      - name: Lint with ruff
+        run: ruff check --output-format=github
+
+      # 5. Run the pytest smoke-test suite.  These tests cover the core
+      #    deterministic logic (config parsing, version comparison, battery
+      #    formatting) without launching a server or opening windows.
+      #
+      #    The "-v" flag gives verbose output so you can see which tests
+      #    passed/failed in the workflow logs.
+      - name: Run tests with pytest
+        run: pytest -v

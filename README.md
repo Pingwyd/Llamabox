@@ -1,11 +1,26 @@
 # Llamabox Desktop Wrapper
 
+![CI](https://github.com/Pingwyd/Llamabox/actions/workflows/ci.yml/badge.svg)
+
 A minimal native desktop wrapper for llama.cpp using pywebview.
 Displays the llama-server web interface in a clean window with no browser
 chrome. Includes server process management, system tray with minimize-to-tray,
 and live CPU/RAM stats in the tray tooltip.
 
-Runs on both **Windows** and **Linux**.
+## Platform Support
+
+| Platform | Status |
+|----------|--------|
+| **Windows** | Fully tested and supported. All features work. |
+| **Linux** | Experimental. Code paths exist but have NOT been tested on a real Linux system. |
+| **macOS** | Not supported. No code paths exist. |
+
+**Windows is the only tested and supported platform for v1.0.** The codebase
+includes cross-platform logic for Linux (XDG directories, zenity dialogs,
+WebKitGTK, `.desktop` autostart files, `fcntl` file locking) that was written
+to be correct in principle, but has never been run on an actual Linux machine.
+If you try it on Linux and hit issues, bug reports and contributions are
+welcome.
 
 ## Lightweight by Design
 
@@ -26,7 +41,7 @@ RAM stays available for the model weights where it actually matters.
 - `pip` (Python package installer)
 - llama.cpp installed somewhere on your machine
 
-### Linux-specific
+### Linux-specific (experimental)
 
 On Linux, you also need:
 
@@ -62,7 +77,7 @@ automatically the first time you run the app.  The location depends on
 your OS:
 
 - **Windows**: `%APPDATA%\Llamabox\`
-- **Linux**: `~/.local/share/Llamabox/`
+- **Linux** (experimental): `~/.local/share/Llamabox/`
 
 Just run the app once:
 
@@ -109,7 +124,7 @@ All application status messages and errors are written to `app.log`,
 which is created in the same data directory as `config.json`:
 
 - **Windows**: `%APPDATA%\Llamabox\`
-- **Linux**: `~/.local/share/Llamabox/`
+- **Linux** (experimental): `~/.local/share/Llamabox/`
 
 The log file is capped at 5 MB with one backup (app.log.1) so it does
 not grow forever.
@@ -132,7 +147,7 @@ tray icon and choose **View Logs**.
 
 ### Where to find the files
 
-| File | Windows | Linux | Purpose |
+| File | Windows | Linux (experimental) | Purpose |
 |------|---------|-------|---------|
 | `config.json` | `%APPDATA%\Llamabox\` | `~/.local/share/Llamabox/` | Server settings (path, model, args) |
 | `app.log` | `%APPDATA%\Llamabox\` | `~/.local/share/Llamabox/` | Application log (startup, errors, shutdown) |
@@ -193,8 +208,8 @@ It has two tabs:
 
 ### General
 
-- **Start with Windows** (also works on Linux) -- Apple-style toggle
-  that enables automatic launch at login.  See the
+- **Start with Windows** -- Apple-style toggle that enables automatic
+  launch at login.  See the
   [Start with Windows / Linux](#start-with-windows--linux) section for
   details.
 
@@ -243,7 +258,7 @@ This wrapper configures the underlying browser engine to use a fixed,
 persistent profile folder inside the data directory:
 
 - **Windows**: `%APPDATA%\Llamabox\WebView2Data\` (WebView2 / Edge)
-- **Linux**: `~/.local/share/Llamabox/WebKitData/` (WebKitGTK)
+- **Linux** (experimental): `~/.local/share/Llamabox/WebKitData/` (WebKitGTK)
 
 This folder contains all the data the web UI persists locally:
 
@@ -369,14 +384,136 @@ You can tell Llamabox to launch automatically when you log in.
   with a value named `Llamabox`.  No admin rights are required since it
   is per-user.
 
-- **Linux**: Check **Start with Windows** in the settings modal or tray
-  menu (the label stays the same for consistency).  This creates a
-  `.desktop` file at `~/.config/autostart/llamabox.desktop` which GNOME,
-  KDE, XFCE, and other freedesktop-compatible desktop environments
-  recognize automatically.
+- **Linux** (experimental): Check **Start with Windows** in the settings
+  modal or tray menu (the label stays the same for consistency).  This
+  creates a `.desktop` file at `~/.config/autostart/llamabox.desktop`
+  which GNOME, KDE, XFCE, and other freedesktop-compatible desktop
+  environments recognize automatically.
 
 If the toggle action fails (e.g. permissions issue), a native error
 message will appear and the failure is logged to `app.log`.
+
+## Running Tests
+
+LlamaBox includes a minimal smoke test suite covering the core deterministic
+logic: version comparison, config parsing/migration, and battery status
+formatting.  These tests run without launching a server or opening windows.
+
+### Install test dependencies
+
+```
+pip install -r requirements-dev.txt
+```
+
+This installs everything in `requirements.txt` plus `pytest`.
+
+### Run the tests
+
+From the project root:
+
+```
+pytest
+```
+
+Or with verbose output:
+
+```
+pytest -v
+```
+
+To run a specific test file:
+
+```
+pytest tests/test_parse_version.py
+pytest tests/test_config.py
+pytest tests/test_battery.py
+```
+
+### What is tested
+
+| Test file | Covers |
+|-----------|--------|
+| `test_parse_version.py` | Semver string parsing and comparison for update checking |
+| `test_config.py` | Config validation, v1-to-v2 migration, profile extraction, malformed input handling |
+| `test_battery.py` | Battery status formatting for the tray tooltip |
+
+### What is NOT tested
+
+These are integration/manual tests that require a running server or OS
+interaction:
+
+- Server process lifecycle (start/stop/restart)
+- pywebview window creation and JS bridge
+- System tray icon and menu
+- Actual file I/O (config.json read/write on disk)
+- Registry/autostart operations
+- Real battery detection via psutil
+
+## Releasing a new version
+
+This project uses a GitHub Actions release workflow that automatically builds
+and publishes the portable `.exe` and the Inno Setup installer whenever you
+push a version tag.
+
+### Manual steps (you must do these)
+
+The release workflow does everything automatically **except** these two
+things, which you must do manually before tagging:
+
+1. **Bump `CURRENT_VERSION` in `wrapper.py`** — the workflow checks that
+   this constant matches the tag version and fails if they differ.
+
+   ```python
+   CURRENT_VERSION = "1.0.1"  # Must match the tag you're about to push
+   ```
+
+2. **Update `AppVersion` in `installer\Llamabox.iss`** — the Inno Setup
+   script has its own version constant.  Keep it in sync with the app.
+
+   ```
+   #define AppVersion     "1.0.1"      ; Must match CURRENT_VERSION in wrapper.py
+   ```
+
+3. **Update `AppPublisher` in `installer\Llamabox.iss`** — set this to your
+   name or organization the first time, then leave it alone.
+
+### Release process
+
+```
+# 1. Make sure you're on main with all changes committed
+git checkout main
+git pull
+
+# 2. Update CURRENT_VERSION in wrapper.py
+#    (edit the file, then save)
+
+# 3. Update AppVersion in installer\Llamabox.iss
+#    (edit the file, then save)
+
+# 4. Commit the version bump
+git add wrapper.py installer\Llamabox.iss
+git commit -m "chore: bump version to 1.0.1"
+
+# 5. Tag the release
+git tag v1.0.1
+
+# 6. Push — the tag triggers the release workflow
+git push origin main --tags
+```
+
+After pushing, go to **Actions** tab on GitHub to watch the workflow run.
+When it finishes, a new Release will appear under **Releases** with both
+assets attached (portable `.exe` and installer `Setup.exe`).
+
+### What the workflow does
+
+1. Validates that `CURRENT_VERSION` in `wrapper.py` matches the tag version
+2. Runs the smoke test suite — if tests fail, the release is cancelled
+3. Builds the portable `.exe` with PyInstaller
+4. Installs Inno Setup and compiles the installer `.iss` script
+5. Names the assets `LlamaBox-1.0.1-portable.exe` and
+   `LlamaBox-1.0.1-Setup.exe` (using the version from the tag)
+6. Creates a GitHub Release with auto-generated release notes
 
 ## Building a Standalone .exe (Windows)
 
@@ -410,7 +547,7 @@ The resulting `.exe` will be at `dist\Llamabox.exe`.
 | `--hidden-import` | Force PyInstaller to include modules it might miss during scanning. |
 | `--collect-all PIL` | Bundle all Pillow image format plugins (needed for the tray icon). |
 
-## Building on Linux
+## Building on Linux (experimental)
 
 To create a distributable package on Linux, you can use PyInstaller
 with similar flags (adjust hidden imports for Linux backends):
@@ -428,6 +565,9 @@ The resulting binary will be at `dist/llamabox`.
 On Linux you may also package the app as a `.deb`, `.rpm`, or AppImage
 using standard Linux packaging tools.  Make sure to include `zenity` and
 `xdg-utils` as dependencies.
+
+**Note**: This has not been tested. Contributions from Linux users are
+welcome.
 
 ## PyInstaller Notes
 

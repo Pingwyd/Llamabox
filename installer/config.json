@@ -1,0 +1,16 @@
+{
+  "config_version": 2,
+  "active_profile": "Default",
+  "profiles": {
+    "Default": {
+      "llama_server_path": "C:\\llama.cpp\\llama-server.exe",
+      "llama_server_args": [
+        "-ngl", "999",
+        "-c", "16384",
+        "--jinja",
+        "--tools", "all"
+      ],
+      "server_url": "http://127.0.0.1:8080"
+    }
+  }
+}

@@ -127,6 +127,9 @@ LLAMA_SERVER_PATH = None
 LLAMA_SERVER_ARGS = None
 SERVER_URL = None
 
+# Config format version — bumped when the schema changes.
+_CONFIG_VERSION = 2
+
 # How many seconds to wait between checking if the server is up.
 POLL_INTERVAL = 2
 
@@ -392,6 +395,26 @@ def _get_battery_status():
     }
 
 
+def _format_battery_tooltip(status):
+    """
+    Format a battery status dict into a short tooltip string.
+
+    Args:
+        status: dict with keys "present" (bool), "percent" (int),
+                "plugged_in" (bool or None).
+
+    Returns:
+        A string like " | Battery: 64% (on battery)" or "" if no battery.
+    """
+    if not status["present"]:
+        return ""
+
+    if status["plugged_in"]:
+        return f" | Battery: {status['percent']}% (plugged in)"
+    else:
+        return f" | Battery: {status['percent']}% (on battery)"
+
+
 def _battery_tooltip_suffix():
     """
     Return a short battery string for the tray tooltip, e.g.
@@ -400,14 +423,7 @@ def _battery_tooltip_suffix():
     Returns "" (empty string) when no battery is detected so the
     tooltip simply omits the battery segment on desktop systems.
     """
-    status = _get_battery_status()
-    if not status["present"]:
-        return ""
-
-    if status["plugged_in"]:
-        return f" | Battery: {status['percent']}% (plugged in)"
-    else:
-        return f" | Battery: {status['percent']}% (on battery)"
+    return _format_battery_tooltip(_get_battery_status())
 
 
 def _check_battery_on_startup():
@@ -511,6 +527,112 @@ def _init_logging():
 CONFIG_FILENAME = "config.json"
 
 
+def _migrate_config(config):
+    """
+    Migrate an old flat config to the new profiles format.
+
+    Old format (v1):
+      { "llama_server_path": "...", "llama_server_args": [...], "server_url": "..." }
+
+    New format (v2):
+      {
+        "config_version": 2,
+        "active_profile": "Default",
+        "profiles": {
+          "Default": {
+            "llama_server_path": "...",
+            "llama_server_args": [...],
+            "server_url": "..."
+          }
+        }
+      }
+
+    If the config is already v2 or has a profiles key, it is returned unchanged.
+    """
+    if config.get("config_version", 1) >= 2 and "profiles" in config:
+        return config
+
+    # Old flat format — migrate to profiles
+    profile = {}
+    for key in ("llama_server_path", "llama_server_args", "server_url"):
+        if key in config:
+            profile[key] = config[key]
+
+    return {
+        "config_version": 2,
+        "active_profile": "Default",
+        "profiles": {"Default": profile},
+    }
+
+
+def _get_active_profile(config):
+    """
+    Return the active profile dict from a v2 config.
+
+    Raises ValueError if the config structure is invalid.
+    """
+    if "profiles" not in config:
+        raise ValueError("Config missing 'profiles' key")
+    if "active_profile" not in config:
+        raise ValueError("Config missing 'active_profile' key")
+
+    name = config["active_profile"]
+    if name not in config["profiles"]:
+        raise ValueError(f"Active profile '{name}' not found in profiles")
+
+    return config["profiles"][name]
+
+
+def _parse_config(config):
+    """
+    Validate and normalize a config dict.  Raises ValueError on invalid input.
+
+    Handles both old flat format (v1) and new profiles format (v2).
+    Migrates v1 to v2 automatically.
+
+    This is the pure-logic core of load_config(), separated so it can be
+    tested without file I/O or sys.exit() calls.
+
+    Args:
+        config: dict loaded from config.json.
+
+    Returns:
+        The validated config dict in v2 format.
+
+    Raises:
+        ValueError: with a descriptive message if the config is invalid.
+    """
+    if not isinstance(config, dict):
+        raise ValueError("Config must be a JSON object (dict), got " + type(config).__name__)
+
+    # Migrate old format to profiles format
+    config = _migrate_config(config)
+
+    # Validate profiles structure
+    if not isinstance(config.get("profiles"), dict):
+        raise ValueError("'profiles' must be a dict")
+    if not config["profiles"]:
+        raise ValueError("'profiles' must contain at least one profile")
+    if not isinstance(config.get("active_profile"), str):
+        raise ValueError("'active_profile' must be a string")
+
+    # Validate the active profile exists and has required fields
+    profile = _get_active_profile(config)
+    required = ["llama_server_path", "llama_server_args", "server_url"]
+    missing = [f for f in required if f not in profile]
+    if missing:
+        raise ValueError(f"Active profile missing required field(s): {', '.join(missing)}")
+
+    if not isinstance(profile["llama_server_path"], str):
+        raise ValueError("'llama_server_path' must be a string")
+    if not isinstance(profile["llama_server_args"], list):
+        raise ValueError("'llama_server_args' must be a list of strings")
+    if not isinstance(profile["server_url"], str):
+        raise ValueError("'server_url' must be a string")
+
+    return config
+
+
 def load_config():
     """
     Load settings from config.json next to the executable/script.
@@ -538,25 +660,10 @@ def load_config():
         )
         sys.exit(1)
 
-    # Validate that every required field is present.
-    required = ["llama_server_path", "llama_server_args", "server_url"]
-    missing = [f for f in required if f not in config]
-    if missing:
-        logging.error(
-            "%s is missing required field(s): %s",
-            CONFIG_FILENAME, ", ".join(missing),
-        )
-        sys.exit(1)
-
-    # Validate the types of expected fields.
-    if not isinstance(config["llama_server_path"], str):
-        logging.error("%s: 'llama_server_path' must be a string", CONFIG_FILENAME)
-        sys.exit(1)
-    if not isinstance(config["llama_server_args"], list):
-        logging.error("%s: 'llama_server_args' must be a list of strings", CONFIG_FILENAME)
-        sys.exit(1)
-    if not isinstance(config["server_url"], str):
-        logging.error("%s: 'server_url' must be a string", CONFIG_FILENAME)
+    try:
+        _parse_config(config)
+    except ValueError as exc:
+        logging.error("%s: %s", CONFIG_FILENAME, exc)
         sys.exit(1)
 
     return config
@@ -565,9 +672,15 @@ def load_config():
 def _create_default_config(config_path):
     """Write a config.json with placeholder values so the user can edit it."""
     default = {
-        "llama_server_path": _DEFAULT_SERVER_PATH,
-        "llama_server_args": _DEFAULT_SERVER_ARGS,
-        "server_url": _DEFAULT_SERVER_URL,
+        "config_version": 2,
+        "active_profile": "Default",
+        "profiles": {
+            "Default": {
+                "llama_server_path": _DEFAULT_SERVER_PATH,
+                "llama_server_args": _DEFAULT_SERVER_ARGS,
+                "server_url": _DEFAULT_SERVER_URL,
+            }
+        },
     }
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(default, f, indent=2)
@@ -912,18 +1025,34 @@ class JsApi:
         }
 
     def get_config(self):
-        """Return the current config values for the settings modal."""
+        """Return the current config values for the settings modal.
+
+        Returns the active profile's values as a flat dict for backward
+        compatibility with the settings modal UI.
+        """
         config_path = os.path.join(_get_data_dir(), CONFIG_FILENAME)
         if not os.path.exists(config_path):
             return {"error": "Config file not found"}
         try:
             with open(config_path, "r", encoding="utf-8") as f:
-                return json.load(f)
+                raw = json.load(f)
         except Exception as exc:
             return {"error": str(exc)}
 
+        # Migrate if needed and return the active profile's values
+        try:
+            config = _parse_config(raw)
+            profile = _get_active_profile(config)
+            return profile
+        except ValueError as exc:
+            return {"error": str(exc)}
+
     def save_config(self, config):
-        """Save config values to config.json and auto-restart if changed."""
+        """Save config values to config.json and auto-restart if changed.
+
+        Accepts flat config values from the settings modal and writes them
+        into the active profile within the profiles structure.
+        """
         global LLAMA_SERVER_PATH, LLAMA_SERVER_ARGS, SERVER_URL, _previous_config
 
         config_path = os.path.join(_get_data_dir(), CONFIG_FILENAME)
@@ -950,15 +1079,42 @@ class JsApi:
             args = [a.strip().strip('"').strip(",") for a in args if isinstance(a, str)]
         config["llama_server_args"] = [a for a in args if a]
 
+        # Build the new profiles config, writing into the active profile
+        try:
+            old_parsed = _parse_config(old_config) if old_config else None
+        except ValueError:
+            old_parsed = None
+
+        active_name = config.get("active_profile", "Default")
+        if old_parsed and "profiles" in old_parsed:
+            active_name = old_parsed.get("active_profile", "Default")
+            profiles = old_parsed.get("profiles", {})
+        else:
+            profiles = {}
+
+        profiles[active_name] = {
+            "llama_server_path": config.get("llama_server_path", ""),
+            "llama_server_args": config.get("llama_server_args", []),
+            "server_url": config.get("server_url", ""),
+        }
+
+        new_config = {
+            "config_version": 2,
+            "active_profile": active_name,
+            "profiles": profiles,
+        }
+
+        # Compare old active profile with new values
+        old_profile = profiles.get(active_name, {}) if old_parsed else {}
         changed = (
-            old_config.get("llama_server_path") != config.get("llama_server_path")
-            or old_config.get("llama_server_args") != config.get("llama_server_args")
-            or old_config.get("server_url") != config.get("server_url")
+            old_profile.get("llama_server_path") != config.get("llama_server_path")
+            or old_profile.get("llama_server_args") != config.get("llama_server_args")
+            or old_profile.get("server_url") != config.get("server_url")
         )
 
         try:
             with open(config_path, "w", encoding="utf-8") as f:
-                json.dump(config, f, indent=2)
+                json.dump(new_config, f, indent=2)
         except Exception as exc:
             return {"error": str(exc)}
 
@@ -1567,9 +1723,10 @@ def main():
     # Load settings from config.json (auto-creates on first run, exits).
     global LLAMA_SERVER_PATH, LLAMA_SERVER_ARGS, SERVER_URL
     config = load_config()
-    LLAMA_SERVER_PATH = config["llama_server_path"]
-    LLAMA_SERVER_ARGS = config["llama_server_args"]
-    SERVER_URL = config["server_url"]
+    profile = _get_active_profile(config)
+    LLAMA_SERVER_PATH = profile["llama_server_path"]
+    LLAMA_SERVER_ARGS = profile["llama_server_args"]
+    SERVER_URL = profile["server_url"]
 
     try:
         # Clean up any orphaned processes from prior runs.
