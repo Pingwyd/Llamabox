@@ -197,14 +197,8 @@ begin
   Exec('taskkill', '/f /im Llamabox.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
-; -----------------------------------------------------------------------------
-; RUN — Actions to perform after installation completes
-; -----------------------------------------------------------------------------
-
 [Run]
-; "Filename" is the app exe. The "Tasks: launchapp" reference ties this
-; to the finish-page checkbox. "Flags: nowait" means the installer doesn't
-; wait for the app to exit before showing the final page.
+; -- Launch after install (finish-page checkbox) --
 Filename: "{app}\{#ExeName}.exe"; \
     Description: "Launch {#AppName}"; \
     Flags: nowait postinstall skipifdoesntexist unchecked
