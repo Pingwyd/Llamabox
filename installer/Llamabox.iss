@@ -177,13 +177,13 @@ const
 function CheckIfRunning(): Boolean;
 var
   hSnapshot: THandle;
-  pe: TProcessEntry32;
+  pe: TWindowsProcessEntry32;
   Found: Boolean;
 begin
   Result := False;
 
   // Take a snapshot of all running processes
-  hSnapshot := CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  hSnapshot := CreateToolhelp32Snapshot($00000002  { TH32CS_SNAPPROCESS }, 0);
   if hSnapshot = INVALID_HANDLE_VALUE then
     Exit;
 
@@ -214,13 +214,13 @@ end;
 function KillProcess(const AName: string): Boolean;
 var
   hSnapshot: THandle;
-  pe: TProcessEntry32;
+  pe: TWindowsProcessEntry32;
   hProcess: THandle;
   Found: Boolean;
 begin
   Result := False;
 
-  hSnapshot := CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  hSnapshot := CreateToolhelp32Snapshot($00000002  { TH32CS_SNAPPROCESS }, 0);
   if hSnapshot = INVALID_HANDLE_VALUE then
     Exit;
 
@@ -232,7 +232,7 @@ begin
     if CompareText(ChangeFileExt(pe.szExeFile, ''), AName) = 0 then
     begin
       // Open the process with terminate rights
-      hProcess := OpenProcess(PROCESS_TERMINATE, False, pe.th32ProcessID);
+      hProcess := OpenProcess($00000001  { PROCESS_TERMINATE }, False, pe.th32ProcessID);
       if hProcess <> 0 then
       begin
         TerminateProcess(hProcess, 0);
