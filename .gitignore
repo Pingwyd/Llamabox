@@ -14,11 +14,15 @@ venv/
 # Log files
 *.log
 
-# Runtime config (machine-specific paths)
-config.json
+# Runtime config (machine-specific paths, created at %APPDATA%\Llamabox\)
+/config.json
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+
+# Installer build artifacts
+installer/Output/
+installer/exe/

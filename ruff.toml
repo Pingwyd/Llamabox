@@ -1,0 +1,61 @@
+# =============================================================================
+# Ruff configuration for LlamaBox
+# =============================================================================
+#
+# Ruff is a fast Python linter written in Rust.  This config is deliberately
+# lenient — it focuses on catching actual bugs and errors rather than
+# enforcing a particular code style.
+#
+# Rule categories (https://docs.astral.sh/ruff/rules/):
+#   F (Pyflakes) — logic errors: undefined names, unused imports, syntax
+#                  errors, duplicate arguments, etc.  Always worth fixing.
+#   E (pycodestyle errors) — syntax-level violations like trailing
+#                            semicolons or missing whitespace.  We enable
+#                            only a few that catch real problems.
+#   W (pycodestyle warnings) — style warnings like trailing whitespace.
+#                              Deliberately off — style is secondary.
+#
+# What is NOT checked (by design for this project):
+#   - Line lengths (E501, W505) — most lines are fine, no strict limit needed
+#   - Import sorting (I) — not worth the churn for a single-file project
+#   - Naming conventions (N) — underscores vs camelCase don't affect correctness
+#   - Docstring conventions (D) — the code already has good docstrings
+#   - Complexity checks (C, PLR) — a 1700-line single file would complain
+# =============================================================================
+
+target-version = "py311"
+
+include = ["*.py"]
+
+exclude = [
+    "venv/",
+    ".mypy_cache/",
+    "build/",
+    "dist/",
+    "__pycache__/",
+]
+
+[lint]
+# Enable only error-catching rule categories
+#   F = Pyflakes (undefined names, unused imports, syntax errors)
+#   E = pycodestyle errors (syntax-level rules, subset only)
+select = ["F", "E"]
+
+# Explicitly ignore things we don't care about
+ignore = [
+    # E501: line too long — no strict limit needed
+    "E501",
+    # E302: expected 2 blank lines — minor formatting
+    "E302",
+    # E305: expected 2 blank lines after class/function — minor
+    "E305",
+    # E402: module-level import not at top — the platform-guarded imports
+    #       (ctypes, fcntl) are intentionally placed after IS_WINDOWS/IS_LINUX
+    #       checks, so this rule would false-positive on legitimate code.
+    "E402",
+    # E701: multiple statements on one line — not worth blocking over
+    "E701",
+    # F401: imported but unused — the .py file defines globals used by
+    #       other modules, so some "unused" imports are intentional.
+    "F401",
+]
