@@ -366,7 +366,7 @@ end;
 ; wait for the app to exit before showing the final page.
 Filename: "{app}\{#ExeName}.exe"; \
     Description: "Launch {#AppName}"; \
-    Flags: nowait postinstall skipifnotexist unchecked
+    Flags: nowait postinstall skipifdoesntexist unchecked
 
 ; The "Flags: unchecked" means the launch checkbox starts unchecked on
 ; the finish page. The user can check it to launch immediately after install.
