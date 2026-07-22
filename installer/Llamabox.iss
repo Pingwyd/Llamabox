@@ -190,6 +190,25 @@ const
   ProcessName = 'Llamabox';
 
 // ---------------------------------------------------------------------------
+// Win32 API imports — needed for process detection / termination.
+// These are not built into Inno Setup's Pascal Script so we declare them
+// explicitly from kernel32.dll.
+// ---------------------------------------------------------------------------
+function CreateToolhelp32Snapshot(dwFlags: LongWord; th32ProcessID: LongWord): THandle;
+  external 'CreateToolhelp32Snapshot@kernel32.dll stdcall';
+function Process32First(hSnapshot: THandle; var lppe: TProcessEntry32): Boolean;
+  external 'Process32First@kernel32.dll stdcall';
+function Process32Next(hSnapshot: THandle; var lppe: TProcessEntry32): Boolean;
+  external 'Process32Next@kernel32.dll stdcall';
+function OpenProcess(dwDesiredAccess: LongWord; bInheritHandle: Boolean;
+  dwProcessId: LongWord): THandle;
+  external 'OpenProcess@kernel32.dll stdcall';
+function TerminateProcess(hProcess: THandle; uExitCode: LongWord): Boolean;
+  external 'TerminateProcess@kernel32.dll stdcall';
+function CloseHandle(hObject: THandle): Boolean;
+  external 'CloseHandle@kernel32.dll stdcall';
+
+// ---------------------------------------------------------------------------
 // CheckIfRunning: Detect if Llamabox is currently running.
 // Returns True if the process is found, False otherwise.
 // Uses the Windows CreateToolhelp32Snapshot API to enumerate processes.
