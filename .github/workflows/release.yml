@@ -117,7 +117,20 @@ jobs:
           )
           & pyinstaller @args
 
-      # 8. Install Inno Setup via Chocolatey and compile the installer .iss
+      # 8. Copy build artifacts into the installer directory so the .iss script
+      #    can find everything at its expected paths (.iss resolves Source:
+      #    relative to its own directory).  The .iss layout expects:
+      #      installer/exe/Llamabox.exe   shell.html   llamabox.ico   config.json
+      - name: Stage files for installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path installer\exe -Force
+          Copy-Item dist\Llamabox.exe installer\exe\Llamabox.exe
+          Copy-Item shell.html installer\shell.html
+          Copy-Item llamabox.ico installer\llamabox.ico
+          Copy-Item config.json installer\config.json
+
+      # 9. Install Inno Setup via Chocolatey and compile the installer .iss
       #    into the final Setup.exe.  Chocolatey is pre-installed on GitHub
       #    Actions Windows runners.
       - name: Install Inno Setup and build installer
@@ -127,7 +140,7 @@ jobs:
           ISCC.exe installer\Llamabox.iss
         shell: pwsh
 
-      # 9. Copy and rename the built artifacts with versioned filenames.
+      # 10. Copy and rename the built artifacts with versioned filenames.
       #    We stage them in a single directory so the release step can
       #    upload everything with a glob pattern.
       - name: Stage release assets
@@ -137,7 +150,7 @@ jobs:
           Copy-Item dist\Llamabox.exe "release-assets\LlamaBox-${{ env.VERSION }}-portable.exe"
           Copy-Item installer\Output\LlamaboxSetup.exe "release-assets\LlamaBox-${{ env.VERSION }}-Setup.exe"
 
-      # 10. Create a GitHub Release and attach the assets.
+      # 11. Create a GitHub Release and attach the assets.
       #     The generate_release_notes: true flag auto-creates a changelog
       #     from commits since the last tag (requires fetch-depth: 0 above).
       #     The tag_name is the original git tag (e.g. "v1.0.1").
