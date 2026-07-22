@@ -13,6 +13,7 @@ Phase 7: Battery-awareness: startup warning when running on battery below a
 Phase 8: "Start with Windows" tray toggle using the standard HKCU Run key.
 Phase 9: Custom toolbar via local shell.html + iframe embedding the llama-server
          UI; JS bridge exposes live CPU/RAM/battery/model to the toolbar.
+Phase 10: Cross-platform support -- Linux alongside Windows.
 """
 
 import time
@@ -24,7 +25,6 @@ import threading
 import queue
 import logging
 import traceback
-import ctypes
 from logging.handlers import RotatingFileHandler
 import requests
 import webview
@@ -34,13 +34,82 @@ import pystray
 from pystray import MenuItem as Item
 
 # ---------------------------------------------------------------------------
+# PLATFORM DETECTION
+# ---------------------------------------------------------------------------
+
+IS_WINDOWS = sys.platform == "win32"
+IS_LINUX = sys.platform.startswith("linux")
+
+# Guard Windows-only imports so the file parses cleanly on Linux.
+if IS_WINDOWS:
+    import ctypes
+
+
+# ---------------------------------------------------------------------------
+# CROSS-PLATFORM HELPERS
+# ---------------------------------------------------------------------------
+
+# Windows MB_* constants
+_MB_OK = 0x00
+_MB_ICONINFO = 0x40
+_MB_ICONWARNING = 0x30
+_MB_ICONERROR = 0x10
+
+
+def _show_messagebox(title, text, flags=0):
+    """
+    Show a native message box on Windows, or a zenity dialog on Linux.
+
+    Args:
+        title: Window title.
+        text:  Body text.
+        flags: Windows-style flags (MB_ICONINFO, etc.).  On Linux this is
+               mapped to the closest zenity icon type.
+    """
+    if IS_WINDOWS:
+        ctypes.windll.user32.MessageBoxW(0, text, title, flags)
+    elif IS_LINUX:
+        icon = "info"
+        if flags & _MB_ICONERROR:
+            icon = "error"
+        elif flags & _MB_ICONWARNING:
+            icon = "warning"
+        try:
+            subprocess.run(
+                ["zenity", "--info", f"--title={title}", f"--text={text}",
+                 f"--icon-name={icon}-symbolic"],
+                timeout=30, capture_output=True,
+            )
+        except FileNotFoundError:
+            # zenity not installed -- fall back to notify-send (fire-and-forget).
+            try:
+                subprocess.run(
+                    ["notify-send", title, text],
+                    timeout=10, capture_output=True,
+                )
+            except FileNotFoundError:
+                logging.warning("No zenity or notify-send found; message: %s: %s", title, text)
+
+
+def _open_file(path):
+    """Open a file with the OS default handler (os.startfile / xdg-open)."""
+    if IS_WINDOWS:
+        os.startfile(path)
+    elif IS_LINUX:
+        subprocess.Popen(["xdg-open", path])
+
+
+# ---------------------------------------------------------------------------
 # CONFIGURATION
 # ---------------------------------------------------------------------------
 
 # These values are loaded from config.json at startup (see load_config()).
 # The defaults here are used only to generate config.json on the first run;
 # after that, config.json is the source of truth.
-_DEFAULT_SERVER_PATH = "C:\\llama.cpp\\llama-server.exe"
+_DEFAULT_SERVER_PATH = (
+    "C:\\llama.cpp\\llama-server.exe" if IS_WINDOWS
+    else os.path.expanduser("~/llama.cpp/llama-server")
+)
 _DEFAULT_SERVER_ARGS = [
     "-hf", "unsloth/gemma-4-E2B-it-GGUF:UD-Q4_K_XL",
     "-ngl", "999",
@@ -128,12 +197,11 @@ def _check_for_updates(notify_on_current=False, notify_on_error=False):
         )
         _update_state["status"] = "error"
         if notify_on_error:
-            ctypes.windll.user32.MessageBoxW(
-                0,
+            _show_messagebox(
+                "Llamabox - Updates",
                 "Update checking has not been configured yet.\n\n"
                 "Set GITHUB_REPO in wrapper.py to your repository path.",
-                "Llamabox - Updates",
-                0x40,
+                _MB_ICONINFO,
             )
         return
 
@@ -150,12 +218,11 @@ def _check_for_updates(notify_on_current=False, notify_on_error=False):
         _update_state["status"] = "error"
         logging.warning("Update check failed: %s", exc)
         if notify_on_error:
-            ctypes.windll.user32.MessageBoxW(
-                0,
+            _show_messagebox(
+                "Llamabox - Updates",
                 "Could not check for updates.\n\n"
                 "Check your internet connection and try again later.",
-                "Llamabox - Updates",
-                0x10,
+                _MB_ICONERROR,
             )
         return
 
@@ -166,12 +233,11 @@ def _check_for_updates(notify_on_current=False, notify_on_error=False):
         _update_state["status"] = "error"
         logging.warning("Update check: could not parse versions (current=%s, latest=%s)", CURRENT_VERSION, latest)
         if notify_on_error:
-            ctypes.windll.user32.MessageBoxW(
-                0,
+            _show_messagebox(
+                "Llamabox - Updates",
                 "Could not compare version numbers.\n\n"
                 f"Current: {CURRENT_VERSION}, Latest: {latest}",
-                "Llamabox - Updates",
-                0x10,
+                _MB_ICONERROR,
             )
         return
 
@@ -186,11 +252,10 @@ def _check_for_updates(notify_on_current=False, notify_on_error=False):
         _update_state["latest_version"] = CURRENT_VERSION
         logging.info("Already on latest version %s", CURRENT_VERSION)
         if notify_on_current:
-            ctypes.windll.user32.MessageBoxW(
-                0,
-                f"You are running the latest version ({CURRENT_VERSION}).",
+            _show_messagebox(
                 "Llamabox - Updates",
-                0x40,
+                f"You are running the latest version ({CURRENT_VERSION}).",
+                _MB_ICONINFO,
             )
 
 
@@ -215,16 +280,22 @@ def _get_data_dir():
     """
     Return the directory for application data files (config, logs).
 
-    Uses %APPDATA%\\Llamabox so files are stored in a writeable user-
-    specific location regardless of where the .exe lives (important for
-    install paths like Program Files that standard users cannot write to).
+    On Windows, uses %APPDATA%\\Llamabox.  On Linux, uses
+    ~/.local/share/Llamabox (XDG_DATA_HOME).
 
     The directory is created on first call if it does not exist.
     """
     global _DATA_DIR
     if _DATA_DIR is not None:
         return _DATA_DIR
-    path = os.path.join(os.environ["APPDATA"], "Llamabox")
+    if IS_LINUX:
+        path = os.path.join(
+            os.environ.get("XDG_DATA_HOME",
+                           os.path.join(os.path.expanduser("~"), ".local", "share")),
+            "Llamabox",
+        )
+    else:
+        path = os.path.join(os.environ["APPDATA"], "Llamabox")
     os.makedirs(path, exist_ok=True)
     _DATA_DIR = path
     return path
@@ -242,7 +313,9 @@ def _get_base_path():
 
 _MIGRATED_FILES = ("config.json", "app.log", "server.log")
 
-_OLD_APPDATA_DIR = os.path.join(os.environ["APPDATA"], "LocalAI")
+_OLD_APPDATA_DIR = (
+    os.path.join(os.environ["APPDATA"], "LocalAI") if IS_WINDOWS else None
+)
 
 
 def _migrate_old_files():
@@ -266,8 +339,8 @@ def _migrate_old_files():
         for name in _MIGRATED_FILES:
             _maybe_copy(shutil, os.path.join(script_dir, name), new_dir)
 
-    # Source 2: old %APPDATA%\LocalAI\ directory (prior app name)
-    if _OLD_APPDATA_DIR != new_dir and os.path.isdir(_OLD_APPDATA_DIR):
+    # Source 2: old %APPDATA%\LocalAI\ directory (prior app name, Windows only)
+    if _OLD_APPDATA_DIR and _OLD_APPDATA_DIR != new_dir and os.path.isdir(_OLD_APPDATA_DIR):
         for name in _MIGRATED_FILES:
             _maybe_copy(shutil, os.path.join(_OLD_APPDATA_DIR, name), new_dir)
 
@@ -366,15 +439,14 @@ def _check_battery_on_startup():
         BATTERY_WARNING_THRESHOLD,
     )
 
-    ctypes.windll.user32.MessageBoxW(
-        0,
+    _show_messagebox(
+        "Llamabox - Battery Notice",
         (
             f"Running on battery ({status['percent']}% remaining).\n\n"
             "Consider using a lighter model profile or enabling "
             "CPU-only mode for better battery life."
         ),
-        "Llamabox - Battery Notice",
-        0x40,  # MB_ICONINFORMATION
+        _MB_ICONINFO,
     )
 
 
@@ -520,6 +592,12 @@ _server_log_file = None
 # an intentional stop (restart / quit) from an unexpected crash.
 _server_stop_intentional = False
 
+# Stores the last server error message so the UI can display it.
+_last_server_error = None
+
+# Stores the previous config so we can revert if the server fails to start.
+_previous_config = None
+
 
 def terminate_existing_servers():
     """
@@ -541,6 +619,17 @@ def terminate_existing_servers():
             logging.warning("Force-killing unresponsive llama-server.exe (PID %s)...", proc.info["pid"])
             proc.kill()
             proc.wait()
+
+
+def _read_server_log_tail(lines=10):
+    """Read the last N lines of server.log for error display."""
+    log_path = os.path.join(_get_data_dir(), "server.log")
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            all_lines = f.readlines()
+            return "".join(all_lines[-lines:]).strip()
+    except Exception:
+        return "(could not read server.log)"
 
 
 def launch_server():
@@ -624,6 +713,7 @@ def restart_server():
 
 _STARTUP_REG_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 _STARTUP_REG_VALUE = "LlamaBox"
+_AUTOSTART_DESKTOP = os.path.expanduser("~/.config/autostart/llamabox.desktop")
 
 
 def _get_startup_exe_path():
@@ -641,47 +731,70 @@ def _get_startup_exe_path():
 
 def _is_startup_enabled():
     """
-    Check whether the "LlamaBox" value exists under the HKCU Run key and
-    points to the current executable.  Returns True only if both match.
+    Check whether auto-start is enabled.
+    Windows: looks for the value under HKCU Run key.
+    Linux: checks for a .desktop file in ~/.config/autostart/.
     """
-    import winreg
+    if IS_WINDOWS:
+        import winreg
+        expected = _get_startup_exe_path()
+        try:
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER, _STARTUP_REG_KEY, 0, winreg.KEY_READ
+            ) as key:
+                stored, _ = winreg.QueryValueEx(key, _STARTUP_REG_VALUE)
+        except FileNotFoundError:
+            return False
+        except Exception:
+            return False
+        return stored == expected
 
-    expected = _get_startup_exe_path()
-    try:
-        with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER, _STARTUP_REG_KEY, 0, winreg.KEY_READ
-        ) as key:
-            stored, _ = winreg.QueryValueEx(key, _STARTUP_REG_VALUE)
-    except FileNotFoundError:
-        return False
-    except Exception:
-        return False
+    elif IS_LINUX:
+        return os.path.isfile(_AUTOSTART_DESKTOP)
 
-    return stored == expected
+    return False
 
 
 def _set_startup(enable):
     """
-    Write or delete the "LlamaBox" value under HKCU Run.
-
-    Raises the underlying exception on failure so the caller can surface
-    it via a message box.
+    Enable or disable auto-start.
+    Windows: writes/deletes the HKCU Run registry value.
+    Linux: creates/removes a .desktop file in ~/.config/autostart/.
     """
-    import winreg
+    if IS_WINDOWS:
+        import winreg
+        if enable:
+            path = _get_startup_exe_path()
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER, _STARTUP_REG_KEY, 0, winreg.KEY_SET_VALUE
+            ) as key:
+                winreg.SetValueEx(key, _STARTUP_REG_VALUE, 0, winreg.REG_SZ, path)
+            logging.info("Startup registry entry added: %s", path)
+        else:
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER, _STARTUP_REG_KEY, 0, winreg.KEY_SET_VALUE
+            ) as key:
+                winreg.DeleteValue(key, _STARTUP_REG_VALUE)
+            logging.info("Startup registry entry removed.")
 
-    if enable:
-        path = _get_startup_exe_path()
-        with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER, _STARTUP_REG_KEY, 0, winreg.KEY_SET_VALUE
-        ) as key:
-            winreg.SetValueEx(key, _STARTUP_REG_VALUE, 0, winreg.REG_SZ, path)
-        logging.info("Startup registry entry added: %s", path)
-    else:
-        with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER, _STARTUP_REG_KEY, 0, winreg.KEY_SET_VALUE
-        ) as key:
-            winreg.DeleteValue(key, _STARTUP_REG_VALUE)
-        logging.info("Startup registry entry removed.")
+    elif IS_LINUX:
+        if enable:
+            exe_path = _get_startup_exe_path()
+            desktop = (
+                "[Desktop Entry]\n"
+                "Type=Application\n"
+                "Name=Llamabox\n"
+                "Exec=" + exe_path + "\n"
+                "X-GNOME-Autostart-enabled=true\n"
+            )
+            os.makedirs(os.path.dirname(_AUTOSTART_DESKTOP), exist_ok=True)
+            with open(_AUTOSTART_DESKTOP, "w") as f:
+                f.write(desktop)
+            logging.info("Autostart .desktop file created: %s", _AUTOSTART_DESKTOP)
+        else:
+            if os.path.exists(_AUTOSTART_DESKTOP):
+                os.remove(_AUTOSTART_DESKTOP)
+                logging.info("Autostart .desktop file removed.")
 
 
 def _on_tray_toggle_startup(icon, item):
@@ -694,11 +807,10 @@ def _on_tray_toggle_startup(icon, item):
         _set_startup(not current)
     except Exception as exc:
         logging.error("Failed to toggle startup entry: %s", exc)
-        ctypes.windll.user32.MessageBoxW(
-            0,
-            f"Could not update the startup setting.\n\n{exc}",
+        _show_messagebox(
             "Llamabox - Error",
-            0x10,  # MB_ICONERROR
+            f"Could not update the startup setting.\n\n{exc}",
+            _MB_ICONERROR,
         )
 
 
@@ -799,6 +911,110 @@ class JsApi:
             "current_version": CURRENT_VERSION,
         }
 
+    def get_config(self):
+        """Return the current config values for the settings modal."""
+        config_path = os.path.join(_get_data_dir(), CONFIG_FILENAME)
+        if not os.path.exists(config_path):
+            return {"error": "Config file not found"}
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    def save_config(self, config):
+        """Save config values to config.json and auto-restart if changed."""
+        global LLAMA_SERVER_PATH, LLAMA_SERVER_ARGS, SERVER_URL, _previous_config
+
+        config_path = os.path.join(_get_data_dir(), CONFIG_FILENAME)
+
+        # Read old config for comparison and store for potential revert.
+        old_config = {}
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    old_config = json.load(f)
+            except Exception:
+                pass
+
+        # Ensure llama_server_args is a list (pywebview bridge may stringify it).
+        args = config.get("llama_server_args", [])
+        if isinstance(args, str):
+            try:
+                parsed = json.loads(args)
+                args = parsed if isinstance(parsed, list) else [parsed]
+            except (json.JSONDecodeError, TypeError):
+                args = [a.strip().strip('"').strip(",") for a in args.split(",") if a.strip()]
+        elif isinstance(args, list):
+            # Clean up any leftover JSON artifacts from a bad parse.
+            args = [a.strip().strip('"').strip(",") for a in args if isinstance(a, str)]
+        config["llama_server_args"] = [a for a in args if a]
+
+        changed = (
+            old_config.get("llama_server_path") != config.get("llama_server_path")
+            or old_config.get("llama_server_args") != config.get("llama_server_args")
+            or old_config.get("server_url") != config.get("server_url")
+        )
+
+        try:
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2)
+        except Exception as exc:
+            return {"error": str(exc)}
+
+        if changed:
+            # Store old config for revert, update in-memory globals, restart.
+            _previous_config = old_config
+            LLAMA_SERVER_PATH = config.get("llama_server_path", LLAMA_SERVER_PATH)
+            LLAMA_SERVER_ARGS = config.get("llama_server_args", LLAMA_SERVER_ARGS)
+            SERVER_URL = config.get("server_url", SERVER_URL)
+            threading.Thread(target=restart_server, daemon=True).start()
+            return {"success": True, "restarted": True}
+
+        return {"success": True, "restarted": False}
+
+    def revert_config(self):
+        """Revert to the previous config and restart."""
+        global LLAMA_SERVER_PATH, LLAMA_SERVER_ARGS, SERVER_URL, _previous_config
+
+        if _previous_config is None:
+            return {"error": "No previous config to revert to."}
+
+        config_path = os.path.join(_get_data_dir(), CONFIG_FILENAME)
+        try:
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(_previous_config, f, indent=2)
+        except Exception as exc:
+            return {"error": str(exc)}
+
+        LLAMA_SERVER_PATH = _previous_config.get("llama_server_path", LLAMA_SERVER_PATH)
+        LLAMA_SERVER_ARGS = _previous_config.get("llama_server_args", LLAMA_SERVER_ARGS)
+        SERVER_URL = _previous_config.get("server_url", SERVER_URL)
+        _previous_config = None
+        threading.Thread(target=restart_server, daemon=True).start()
+        return {"success": True}
+
+    def restart_server(self):
+        """Manually restart the server (called from the settings modal)."""
+        threading.Thread(target=restart_server, daemon=True).start()
+        return {"success": True}
+
+    def get_startup_enabled(self):
+        """Return whether Start with Windows is currently enabled."""
+        return _is_startup_enabled()
+
+    def set_startup(self, enable):
+        """Enable or disable Start with Windows. Returns success or error."""
+        try:
+            _set_startup(enable)
+            return {"success": True, "enabled": enable}
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    def get_server_error(self):
+        """Return the last server error message, if any."""
+        return {"error": _last_server_error}
+
 
 # ---------------------------------------------------------------------------
 # TRAY ICON
@@ -831,7 +1047,7 @@ def _on_tray_edit_config(icon, item):
     """
     config_path = os.path.join(_get_data_dir(), CONFIG_FILENAME)
     if os.path.exists(config_path):
-        os.startfile(config_path)
+        _open_file(config_path)
 
 
 def _on_tray_view_logs(icon, item):
@@ -841,7 +1057,7 @@ def _on_tray_view_logs(icon, item):
     """
     log_path = os.path.join(_get_data_dir(), APP_LOG_FILENAME)
     if os.path.exists(log_path):
-        os.startfile(log_path)
+        _open_file(log_path)
 
 
 def _on_tray_restart(icon, item):
@@ -945,12 +1161,11 @@ def _stats_monitor(icon):
             pid,
         )
 
-        ctypes.windll.user32.MessageBoxW(
-            0,
+        _show_messagebox(
+            "Llamabox - Server Error",
             "The server stopped unexpectedly and may have crashed.\n\n"
             "Check server.log and app.log for details.",
-            "Llamabox - Server Error",
-            0x10,  # MB_ICONERROR
+            _MB_ICONERROR,
         )
 
     while True:
@@ -1040,13 +1255,29 @@ def wait_for_server(url, interval, timeout):
     response.  Any status code (even 404, 500, etc.) counts as "server
     is running".  Raises ServerTimeoutError if `timeout` seconds pass
     with no response.
+
+    Also detects fast failure: if the server process exits within the
+    first few seconds, it likely crashed due to bad args / missing file.
     """
+    global _last_server_error
     start = time.time()
 
     while True:
         elapsed = time.time() - start
         if elapsed >= timeout:
             raise ServerTimeoutError("Server did not start within 60 seconds")
+
+        # Fast-failure detection: if the server process already exited
+        # (e.g. bad arguments, missing file), don't keep polling.
+        if _server_process is not None and _server_process.poll() is not None:
+            exit_code = _server_process.returncode
+            error_msg = _read_server_log_tail(10)
+            _last_server_error = (
+                f"Server exited immediately (exit code {exit_code}).\n\n"
+                f"Last output from server.log:\n{error_msg}"
+            )
+            logging.error("Server failed to start: %s", _last_server_error)
+            raise ServerTimeoutError(_last_server_error)
 
         logging.info("Waiting for server...")
 
@@ -1225,10 +1456,12 @@ def run_window_loop():
         )
 
         # Start a background thread that polls for the window HWND and
-        # applies the amber title bar once the window appears.  We do this
+        # applies the dark title bar once the window appears.  We do this
         # instead of using webview.start(func=...) because pywebview 4.x
         # does not expose a native_handle property on the Window object.
-        threading.Thread(target=_style_window, daemon=True).start()
+        # Only on Windows; Linux uses GTK/Qt and doesn't have DWM.
+        if IS_WINDOWS:
+            threading.Thread(target=_style_window, daemon=True).start()
 
         # webview.start() blocks until the window is closed (or destroyed
         # by the Quit callback).  After it returns, clear the reference.
@@ -1266,22 +1499,36 @@ def run_window_loop():
 # is intentionally leaked so the kernel destroys the mutex object when
 # the process exits (even on crash), preventing orphaned-lock issues.
 _SINGLE_INSTANCE_MUTEX_NAME = "Llamabox_SingleInstance_Mutex"
+_SINGLE_INSTANCE_LOCK_FILE = os.path.join(_get_data_dir(), ".lock")
 
 
 def _check_single_instance():
     """
     Return True if this is the only instance running.
-
-    Uses CreateMutexW with bInitialOwner=TRUE to atomically create and
-    acquire a named mutex.  If ERROR_ALREADY_EXISTS is returned, another
-    process is actively holding the mutex and we should exit.
+    Windows: uses CreateMutexW with bInitialOwner=TRUE.
+    Linux: uses a lock file with fcntl.flock.
     """
-    handle = ctypes.windll.kernel32.CreateMutexW(
-        None, True, _SINGLE_INSTANCE_MUTEX_NAME,
-    )
-    if ctypes.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
-        ctypes.windll.kernel32.CloseHandle(handle)
-        return False
+    if IS_WINDOWS:
+        handle = ctypes.windll.kernel32.CreateMutexW(
+            None, True, _SINGLE_INSTANCE_MUTEX_NAME,
+        )
+        if ctypes.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return False
+        return True
+
+    elif IS_LINUX:
+        import fcntl
+        try:
+            lock_fd = open(_SINGLE_INSTANCE_LOCK_FILE, "w")
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            lock_fd.write(str(os.getpid()))
+            lock_fd.flush()
+            globals()["_lock_fd"] = lock_fd
+            return True
+        except OSError:
+            return False
+
     return True
 
 
@@ -1310,11 +1557,10 @@ def main():
     # Exit early if another instance is already running.
     if not _check_single_instance():
         logging.info("Another instance is already running -- exiting.")
-        ctypes.windll.user32.MessageBoxW(
-            0,
-            "Llamabox is already running.\nCheck your system tray.",
+        _show_messagebox(
             "Llamabox",
-            0x40,  # MB_ICONINFORMATION
+            "Llamabox is already running.\nCheck your system tray.",
+            _MB_ICONINFO,
         )
         sys.exit(0)
 
@@ -1385,6 +1631,6 @@ if __name__ == "__main__":
             f"Check app.log in:\n{_get_data_dir()}\n\n"
             "for details."
         )
-        ctypes.windll.user32.MessageBoxW(0, msg, "Llamabox - Error", 0x10)
+        _show_messagebox("Llamabox - Error", msg, _MB_ICONERROR)
 
         os._exit(1)
