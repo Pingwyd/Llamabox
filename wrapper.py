@@ -151,7 +151,7 @@ BATTERY_WARNING_THRESHOLD = 30
 SHELL_HTML_FILENAME = "shell.html"
 
 # App version -- bumped manually before each release.
-CURRENT_VERSION = "1.0.0"
+CURRENT_VERSION = "0.1.0"
 
 # GitHub repository path for update checks ("owner/repo").
 # Set to the real value once the repo is published.

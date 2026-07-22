@@ -24,7 +24,7 @@
 ; -----------------------------------------------------------------------------
 
 #define AppName        "Llamabox"
-#define AppVersion     "1.0.0"       ; Must match CURRENT_VERSION in wrapper.py
+#define AppVersion     "0.1.0"       ; Must match CURRENT_VERSION in wrapper.py
 #define AppPublisher   "Your Name"   ; Replace with your name or org
 #define AppURL         "https://github.com/Pingwyd/Llamabox"
 #define ExeName        "Llamabox"    ; Base name of the .exe (no extension)
