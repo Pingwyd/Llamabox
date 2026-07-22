@@ -121,6 +121,8 @@ jobs:
       #    can find everything at its expected paths (.iss resolves Source:
       #    relative to its own directory).  The .iss layout expects:
       #      installer/exe/Llamabox.exe   shell.html   llamabox.ico   config.json
+      #    Note: config.json is already committed at installer/config.json
+      #    (only the root /config.json is gitignored).
       - name: Stage files for installer
         shell: pwsh
         run: |
@@ -128,7 +130,6 @@ jobs:
           Copy-Item dist\Llamabox.exe installer\exe\Llamabox.exe
           Copy-Item shell.html installer\shell.html
           Copy-Item llamabox.ico installer\llamabox.ico
-          Copy-Item config.json installer\config.json
 
       # 9. Install Inno Setup via Chocolatey and compile the installer .iss
       #    into the final Setup.exe.  Chocolatey is pre-installed on GitHub
