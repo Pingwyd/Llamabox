@@ -1,11 +1,74 @@
-# Llamabox Desktop Wrapper
+<div align="center">
 
-![CI](https://github.com/Pingwyd/Llamabox/actions/workflows/ci.yml/badge.svg)
+<img src="llamabox_256.png" width="96" alt="Llamabox icon" />
 
-A minimal native desktop wrapper for llama.cpp using pywebview.
-Displays the llama-server web interface in a clean window with no browser
-chrome. Includes server process management, system tray with minimize-to-tray,
-and live CPU/RAM stats in the tray tooltip.
+# Llamabox
+
+**A lightweight native desktop wrapper for llama.cpp — no browser tab, no bloat, just your local model.**
+
+[![CI](https://github.com/Pingwyd/Llamabox/actions/workflows/ci.yml/badge.svg)](https://github.com/Pingwyd/Llamabox/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Latest Release](https://img.shields.io/github/v/release/Pingwyd/Llamabox)](https://github.com/Pingwyd/Llamabox/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows-blue)](#platform-support)
+
+</div>
+
+---
+
+### Why this exists
+
+Running a local model with `llama-server` gives you a web UI — but opening
+it in a normal browser tab means paying for an entire browser process just
+to display one page. Llamabox replaces that tab with a real, native,
+single-purpose window: it launches the server for you, waits until it's
+actually ready, and shows it in a clean window that lives quietly in your
+system tray. No tabs, no bookmarks bar, no browser overhead sitting between
+you and your model.
+
+### What you get
+
+- 🪶 **Genuinely lightweight** — ~45-90 MB of wrapper overhead, not the
+  300-500 MB an Electron-based chat app costs before you've even loaded a
+  model
+- 🚀 **One-click launch** — starts `llama-server` for you, waits for it to
+  be ready, then opens the window automatically
+- 🗂️ **System tray native** — minimizes to tray instead of quitting, with
+  live CPU/RAM/battery stats in the toolbar
+- 🔄 **Model switching** — swap between configured model profiles without
+  touching a terminal
+- 🔋 **Battery-aware** — a heads-up when you're running low and unplugged
+- ⚙️ **Fully configurable, no rebuild required** — everything lives in a
+  plain `config.json`
+- 🔒 **Zero telemetry** — no analytics, no phone-home, nothing beyond
+  talking to your own local server and (optionally) checking GitHub for
+  updates
+
+### Screenshots
+
+<!--
+  Add 2-3 screenshots or a short GIF here once available, e.g.:
+  ![Tray menu](docs/screenshot-tray.png)
+  ![Toolbar + chat window](docs/screenshot-window.png)
+  A short screen recording showing launch -> tray minimize -> restore
+  works especially well for a tool like this.
+-->
+
+### Quick start
+
+```bash
+git clone https://github.com/Pingwyd/Llamabox.git
+cd Llamabox
+pip install -r requirements.txt
+python wrapper.py
+```
+
+On first run, Llamabox creates a `config.json` for you to point at your
+own `llama-server` install and model — see [Configuration](#configuration-configjson)
+below. Prefer not to install Python at all? Grab the prebuilt `.exe` or
+installer from [Releases](https://github.com/Pingwyd/Llamabox/releases)
+instead.
+
+---
 
 ## Platform Support
 
