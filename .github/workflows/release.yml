@@ -84,7 +84,7 @@ jobs:
         shell: pwsh
         run: |
           $expected = "${{ env.VERSION }}"
-          $current = python -c "import re; m=re.search(r'^CURRENT_VERSION\s*=\s*[\"']([^\"']+)[\"']', open('wrapper.py').read(), re.M); print(m.group(1))"
+          $current = Select-String -Path wrapper.py -Pattern '^CURRENT_VERSION\s*=\s*"(.+)"' | ForEach-Object { $_.Matches.Groups[1].Value }
           if ($current -ne $expected) {
             Write-Host "::error::CURRENT_VERSION in wrapper.py is '$current' but tag version is '$expected'."
             Write-Host "::error::Update CURRENT_VERSION to '$expected' in wrapper.py, commit, and re-tag."
@@ -101,15 +101,21 @@ jobs:
       #    The --icon and --hidden-import flags match the original packaging
       #    instructions from the project's README.
       - name: Build portable .exe with PyInstaller
+        shell: pwsh
         run: |
           pip install pyinstaller
-          pyinstaller --onefile --windowed --icon=llamabox.ico --name "Llamabox" ^
-            --hidden-import webview.platforms.win32_edge ^
-            --hidden-import webview.platforms.winforms ^
-            --hidden-import pystray._win32 ^
-            --collect-all PIL ^
-            wrapper.py
-        shell: pwsh
+          $args = @(
+            '--onefile',
+            '--windowed',
+            '--icon=llamabox.ico',
+            '--name', 'Llamabox',
+            '--hidden-import', 'webview.platforms.win32_edge',
+            '--hidden-import', 'webview.platforms.winforms',
+            '--hidden-import', 'pystray._win32',
+            '--collect-all', 'PIL',
+            'wrapper.py'
+          )
+          & pyinstaller @args
 
       # 8. Install Inno Setup via Chocolatey and compile the installer .iss
       #    into the final Setup.exe.  Chocolatey is pre-installed on GitHub
