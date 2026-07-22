@@ -766,10 +766,20 @@ def launch_server():
     logging.info("Launching: %s", " ".join(cmd))
     logging.info("Server log (stdout/stderr): %s", log_path)
 
+    # Hide the console window on Windows — llama-server.exe is a console-mode
+    # binary and would otherwise pop a visible terminal on every launch.
+    kwargs = {}
+    if sys.platform == "win32":
+        kwargs["startupinfo"] = subprocess.STARTUPINFO(
+            dwFlags=subprocess.STARTF_USESHOWWINDOW,
+            wShowWindow=subprocess.SW_HIDE,
+        )
+
     _server_process = subprocess.Popen(
         cmd,
         stdout=_server_log_file,
         stderr=subprocess.STDOUT,
+        **kwargs,
     )
 
 
