@@ -84,7 +84,6 @@ MinVersion=10.0.17763
 
 ; Do not prompt for admin rights — we install to %LOCALAPPDATA%
 PrivilegesRequired=lowest
-PrivilegesRequiredOverridingAllowed=lowest
 
 ; Uncomment the line below if you want a license agreement screen:
 ; LicenseFile=LICENSE
