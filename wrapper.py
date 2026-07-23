@@ -32,6 +32,8 @@ import psutil
 from PIL import Image
 import pystray
 from pystray import MenuItem as Item
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+import socket
 
 # ---------------------------------------------------------------------------
 # PLATFORM DETECTION
@@ -987,6 +989,24 @@ class JsApi:
     Called from the shell.html toolbar polling loop.
     """
 
+    def copy_to_clipboard(self, text):
+        """Copy text to the system clipboard.
+
+        The llama-server UI runs inside an iframe where the Clipboard API
+        may be blocked depending on the page origin.  This bridge method
+        lets injected JS route copy requests through Python instead.
+        """
+        try:
+            import win32clipboard
+            win32clipboard.OpenClipboard()
+            win32clipboard.EmptyClipboard()
+            win32clipboard.SetClipboardText(text, win32clipboard.CF_UNICODETEXT)
+            win32clipboard.CloseClipboard()
+            return True
+        except Exception:
+            logging.warning("Failed to copy to clipboard: %s", text[:80])
+            return False
+
     def get_server_url(self):
         """Return the current server URL for the iframe to load."""
         return SERVER_URL
@@ -1607,7 +1627,21 @@ def run_window_loop():
     webview2_data_dir = os.path.join(_get_data_dir(), "WebView2Data")
 
     shell_path = os.path.join(_get_base_path(), SHELL_HTML_FILENAME)
-    shell_url = Path(shell_path).resolve().as_uri()
+    shell_dir = os.path.dirname(shell_path)
+
+    # Serve shell.html over a local HTTP server so the page has a proper
+    # localhost origin.  This is required for the Clipboard API to work
+    # inside the iframe (file:// blocks it).
+    class _QuietHandler(SimpleHTTPRequestHandler):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, directory=shell_dir, **kw)
+        def log_message(self, fmt, *a):
+            pass  # suppress request logs
+
+    httpd = HTTPServer(("127.0.0.1", 0), _QuietHandler)
+    http_port = httpd.server_address[1]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    shell_url = f"http://127.0.0.1:{http_port}/{SHELL_HTML_FILENAME}"
 
     while True:
         global _window
@@ -1636,6 +1670,7 @@ def run_window_loop():
             private_mode=False,
         )
         _window = None
+        httpd.shutdown()
 
         # At this point the window is gone, but the tray is still running.
         # Drain any stale "show" commands that were queued while the window
