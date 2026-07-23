@@ -124,6 +124,10 @@ _DEFAULT_SERVER_ARGS = [
 ]
 _DEFAULT_SERVER_URL = "http://127.0.0.1:8080"
 
+# Set to the local proxy HTTP port once the server starts, so the JS bridge
+# can return a same-origin URL for the iframe.
+_http_port = None
+
 # Populated from config.json by load_config().
 LLAMA_SERVER_PATH = None
 LLAMA_SERVER_ARGS = None
@@ -1008,7 +1012,14 @@ class JsApi:
             return False
 
     def get_server_url(self):
-        """Return the current server URL for the iframe to load."""
+        """Return the current server URL for the iframe to load.
+
+        Returns a same-origin proxied URL so the Clipboard API works
+        inside the iframe.  Falls back to the direct SERVER_URL if the
+        proxy port is not yet set.
+        """
+        if _http_port is not None:
+            return f"http://127.0.0.1:{_http_port}/llama/"
         return SERVER_URL
 
     def get_stats(self):
@@ -1629,17 +1640,62 @@ def run_window_loop():
     shell_path = os.path.join(_get_base_path(), SHELL_HTML_FILENAME)
     shell_dir = os.path.dirname(shell_path)
 
-    # Serve shell.html over a local HTTP server so the page has a proper
-    # localhost origin.  This is required for the Clipboard API to work
-    # inside the iframe (file:// blocks it).
-    class _QuietHandler(SimpleHTTPRequestHandler):
+    # Serve shell.html and proxy the llama-server through a single local
+    # HTTP server.  This keeps the parent and iframe on the same origin
+    # (same port), which is required for the Clipboard API to work inside
+    # the iframe.  Requests to /llama/* are forwarded to the actual
+    # llama-server; everything else is served from shell_dir.
+    class _ProxyHandler(SimpleHTTPRequestHandler):
         def __init__(self, *a, **kw):
             super().__init__(*a, directory=shell_dir, **kw)
+
+        def do_GET(self):
+            if self.path.startswith("/llama/"):
+                self._proxy(self.path[6:])  # strip /llama
+            elif self.path == "/llama" or self.path == "/llama/":
+                self._proxy("/")
+            else:
+                super().do_GET()
+
+        def do_POST(self):
+            if self.path.startswith("/llama/"):
+                self._proxy(self.path[6:], method="POST")
+            else:
+                super().do_POST()
+
+        def _proxy(self, path, method="GET"):
+            # Extract host:port from the configured SERVER_URL at request time
+            # so it picks up any config changes.
+            from urllib.parse import urlparse
+            parsed = urlparse(SERVER_URL)
+            target = f"{parsed.scheme}://{parsed.hostname}:{parsed.port}{path}"
+            try:
+                body = None
+                if method == "POST":
+                    length = int(self.headers.get("Content-Length", 0))
+                    body = self.rfile.read(length) if length else None
+                resp = requests.request(
+                    method, target, data=body,
+                    headers={"Content-Type": self.headers.get("Content-Type", "application/octet-stream")},
+                    timeout=30, stream=True,
+                )
+                self.send_response(resp.status_code)
+                for key, val in resp.headers.items():
+                    if key.lower() not in ("transfer-encoding", "connection"):
+                        self.send_header(key, val)
+                self.end_headers()
+                for chunk in resp.iter_content(8192):
+                    self.wfile.write(chunk)
+            except Exception:
+                self.send_error(502)
+
         def log_message(self, fmt, *a):
             pass  # suppress request logs
 
-    httpd = HTTPServer(("127.0.0.1", 0), _QuietHandler)
+    httpd = HTTPServer(("127.0.0.1", 0), _ProxyHandler)
     http_port = httpd.server_address[1]
+    global _http_port
+    _http_port = http_port
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     shell_url = f"http://127.0.0.1:{http_port}/{SHELL_HTML_FILENAME}"
 

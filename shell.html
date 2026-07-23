@@ -243,7 +243,21 @@ function switchTab(tab, el) {
 async function initFrame() {
     try {
         var url = await window.pywebview.api.get_server_url();
-        document.getElementById('server-frame').src = url;
+        var frame = document.getElementById('server-frame');
+        frame.src = url;
+        frame.onload = function() {
+            try {
+                var cw = frame.contentWindow;
+                var orig = cw.navigator.clipboard.writeText.bind(cw.navigator.clipboard);
+                cw.navigator.clipboard.writeText = function(text) {
+                    return orig(text).catch(function() {
+                        return window.pywebview.api.copy_to_clipboard(text).then(function(ok) {
+                            if (!ok) throw new Error('Failed');
+                        });
+                    });
+                };
+            } catch(e) {}
+        };
     } catch (e) {
         setTimeout(initFrame, 500);
     }
