@@ -1685,7 +1685,7 @@ def run_window_loop():
                         "cross-origin-embedder-policy",
                         "cross-origin-opener-policy",
                         "cross-origin-resource-policy",
-                        "content-encoding"}
+                        "content-encoding", "content-length"}
                 for key, val in resp.headers.items():
                     if key.lower() not in skip:
                         self.send_header(key, val)
