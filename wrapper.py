@@ -1679,8 +1679,15 @@ def run_window_loop():
                     timeout=30, stream=True,
                 )
                 self.send_response(resp.status_code)
+                # Headers that block iframe embedding or interfere with
+                # the proxy — strip them from the proxied response.
+                skip = {"transfer-encoding", "connection",
+                        "cross-origin-embedder-policy",
+                        "cross-origin-opener-policy",
+                        "cross-origin-resource-policy",
+                        "content-encoding"}
                 for key, val in resp.headers.items():
-                    if key.lower() not in ("transfer-encoding", "connection"):
+                    if key.lower() not in skip:
                         self.send_header(key, val)
                 self.end_headers()
                 for chunk in resp.iter_content(8192):
