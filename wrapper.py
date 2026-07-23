@@ -1019,7 +1019,7 @@ class JsApi:
         proxy port is not yet set.
         """
         if _http_port is not None:
-            return f"http://127.0.0.1:{_http_port}/llama/"
+            return f"http://127.0.0.1:{_http_port}/"
         return SERVER_URL
 
     def get_stats(self):
@@ -1643,25 +1643,24 @@ def run_window_loop():
     # Serve shell.html and proxy the llama-server through a single local
     # HTTP server.  This keeps the parent and iframe on the same origin
     # (same port), which is required for the Clipboard API to work inside
-    # the iframe.  Requests to /llama/* are forwarded to the actual
-    # llama-server; everything else is served from shell_dir.
+    # the iframe.  The llama-server gets every request by default; our
+    # shell.html is served only at /__shell/ so the llama-server's
+    # absolute paths (e.g. /style.css, /app.js) route through the proxy
+    # and resolve correctly.
     class _ProxyHandler(SimpleHTTPRequestHandler):
         def __init__(self, *a, **kw):
             super().__init__(*a, directory=shell_dir, **kw)
 
         def do_GET(self):
-            if self.path.startswith("/llama/"):
-                self._proxy(self.path[6:])  # strip /llama
-            elif self.path == "/llama" or self.path == "/llama/":
-                self._proxy("/")
-            else:
+            if self.path.startswith("/__shell"):
+                # Serve shell.html and static assets from shell_dir
+                self.path = self.path.replace("/__shell", "", 1) or f"/{SHELL_HTML_FILENAME}"
                 super().do_GET()
+            else:
+                self._proxy(self.path)
 
         def do_POST(self):
-            if self.path.startswith("/llama/"):
-                self._proxy(self.path[6:], method="POST")
-            else:
-                super().do_POST()
+            self._proxy(self.path, method="POST")
 
         def _proxy(self, path, method="GET"):
             # Extract host:port from the configured SERVER_URL at request time
@@ -1697,7 +1696,7 @@ def run_window_loop():
     global _http_port
     _http_port = http_port
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
-    shell_url = f"http://127.0.0.1:{http_port}/{SHELL_HTML_FILENAME}"
+    shell_url = f"http://127.0.0.1:{http_port}/__shell/{SHELL_HTML_FILENAME}"
 
     while True:
         global _window
